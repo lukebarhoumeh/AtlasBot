@@ -1,53 +1,88 @@
 """
-Real-time Coinbase price streamer + minute-bar cache.
-Keeps a thread-safe dict of the latest trade price per symbol and
-builds rolling OHLCV bars for ATR / volatility calculations.
+Real-time Coinbase price streamer + 1-minute bar cache
+—————————————————————————————————————————————————————————
+• tries legacy Pro WS first, auto-fails over to Advanced-Trade WS
+• if first tick hasn’t arrived in 3 s -> seed with REST /ticker
+• builds rolling OHLC bars for ATR/vol
+• exponential back-off reconnect, no log spam
 """
-import json, logging, threading, time
+
+from __future__ import annotations
+import json, logging, threading, time, websocket
 from collections import defaultdict, deque
-from datetime import datetime, timezone, timedelta
-from typing import Dict, Deque, List, Tuple
+from datetime import datetime, timedelta, timezone
+from typing import Deque, Dict, List, Tuple
 
-import cbpro  # pip install cbpro
+from atlasbot.config import (SYMBOLS, WS_URL_PRO,
+                             WS_URL_ADVANCED, REST_TICKER_FMT)
 
-ONE_MIN = 60  # seconds
+ONE_MIN       = 60
+BAR_HISTORY   = 5_000             # ≈ 3.5 days
+SEED_TIMEOUT  = 3                 # s to wait before REST seed
 
 
-class _CBWebSocket(cbpro.WebsocketClient):
-    """
-    Lightweight wrapper around cbpro.WebsocketClient that only
-    listens to the 'ticker' channel and stashes the last trade price.
-    """
+# ---------------------------------------------------------------- WebSocket client (vanilla)
+class _WSClient:
+    def __init__(self, url: str, products: List[str], price_store: Dict[str, float]):
+        self._url, self._products, self._store = url, products, price_store
+        self._ws: websocket.WebSocketApp | None = None
 
-    def __init__(self, products: List[str], price_store: Dict[str, float]):
-        super().__init__(
-            url="wss://ws-feed.exchange.coinbase.com",
-            products=products,
-            channels=["ticker"],
-        )
-        self._price_store = price_store
+    # ————— public —————
+    def run_forever(self):
+        backoff = 1
+        while True:
+            self._ws = websocket.WebSocketApp(
+                self._url,
+                on_open=self._on_open,
+                on_message=self._on_msg,
+                on_error=self._on_err,
+                on_close=self._on_close,
+            )
+            self._ws.run_forever(ping_interval=20, ping_timeout=10)
+            logging.error("WS closed – retrying in %ds", backoff)
+            time.sleep(backoff)
+            backoff = min(backoff * 2, 60)
 
-    def on_message(self, msg):
-        if msg.get("type") != "ticker":
-            return
+    # ————— internals —————
+    def _on_open(self, _):
+        print("-- Subscribed! --")
+        sub = {
+            "type": "subscribe",
+            "product_ids": self._products,
+            "channels": ["ticker"],
+        }
+        self._ws.send(json.dumps(sub))
+
+    def _on_msg(self, _, msg: str):
         try:
-            product = msg["product_id"]
-            price = float(msg["price"])
-            self._price_store[product] = price
-        except (KeyError, ValueError):
-            logging.warning(f"Malformed ticker message: {msg}")
+            j = json.loads(msg)
+            if j.get("type") == "ticker":
+                self._store[j["product_id"]] = float(j["price"])
+        except Exception as exc:                         # noqa: BLE001
+            logging.debug("malformed ws msg: %s (%s)", msg[:120], exc)
 
-    # We keep on_error/on_close defaults; cbpro auto-reconnects.
+    def _on_err(self, _, err):
+        logging.error("WS error: %s", err)
+
+    def _on_close(self, *_):
+        pass
 
 
+def _seed_prices(products: List[str], price_store: Dict[str, float]):
+    """Best-effort REST seed so we’re never empty."""
+    import requests, warnings
+    warnings.filterwarnings("ignore", category=UserWarning)
+    for p in products:
+        try:
+            r = requests.get(REST_TICKER_FMT.format(p), timeout=2).json()
+            price_store[p] = float(r["price"])
+        except Exception:                                # noqa: BLE001
+            pass
+
+
+# ---------------------------------------------------------------- MarketData singleton
 class MarketData:
-    """
-    Singleton providing:
-      • latest_trade(symbol)  -> float
-      • minute_bars(symbol)   -> deque[Tuple[open, high, low, close]]
-    """
-
-    _instance = None
+    _instance: "MarketData|None" = None
 
     def __new__(cls, symbols: List[str]):
         if cls._instance is None:
@@ -55,70 +90,86 @@ class MarketData:
             cls._instance._init(symbols)
         return cls._instance
 
-    # ---------- public API ----------
-    def latest_trade(self, symbol: str) -> float:
-        price = self._prices.get(symbol)
-        if price is None:
-            raise RuntimeError(f"No live price yet for {symbol}")
-        return price
-
-    def minute_bars(self, symbol: str) -> Deque[Tuple[float, float, float, float]]:
-        return self._bars[symbol]
-
-    # ---------- internal ----------
+    # ————— internal init —————
     def _init(self, symbols: List[str]):
-        self._prices: Dict[str, float] = {}
-        self._bars: Dict[
-            str, Deque[Tuple[float, float, float, float]]
-        ] = {s: deque(maxlen=5000) for s in symbols}  # ≈ 3½ days @ 1-min
         self._symbols = symbols
+        self._prices: Dict[str, float] = {}
+        self._bars: Dict[str, Deque[Tuple[float, float, float, float]]] = {
+            s: deque(maxlen=BAR_HISTORY) for s in symbols
+        }
 
-        # Start WebSocket thread
-        self._ws = _CBWebSocket(symbols, self._prices)
-        self._ws_thread = threading.Thread(
-            target=self._ws.start, name="CBWebSocket", daemon=True
-        )
-        self._ws_thread.start()
+        # start socket thread (legacy first → auto-fallback handled in _ws_runner)
+        threading.Thread(
+            target=self._ws_runner, name="CBWS", daemon=True
+        ).start()
 
-        # Start minute-bar worker
-        self._bar_thread = threading.Thread(
+        # start bar builder
+        threading.Thread(
             target=self._bar_worker, name="BarBuilder", daemon=True
-        )
-        self._bar_thread.start()
+        ).start()
+
+    # ————— public API —————
+    def wait_ready(self, timeout: int = 15) -> bool:
+        """True if at least one price arrives within *timeout* seconds."""
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if self._prices:
+                return True
+            time.sleep(0.2)
+        return False
+
+    def latest_trade(self, sym: str) -> float:
+        try:
+            return self._prices[sym]
+        except KeyError as exc:
+            raise RuntimeError(f"No live price yet for {sym}") from exc
+
+    def minute_bars(self, sym: str) -> Deque[Tuple[float, float, float, float]]:
+        return self._bars[sym]
+
+    # ————— threads —————
+    def _ws_runner(self):
+        # first try legacy; if nothing arrives in SEED_TIMEOUT fallback ➜ advanced
+        for url in (WS_URL_PRO, WS_URL_ADVANCED):
+            seed_t0 = time.monotonic()
+            ws = _WSClient(url, self._symbols, self._prices)
+            t = threading.Thread(target=ws.run_forever, daemon=True)
+            t.start()
+            # wait a bit – if prices arrive we’re done
+            while time.monotonic() - seed_t0 < SEED_TIMEOUT:
+                if self._prices:
+                    break
+                time.sleep(0.2)
+            if self._prices:
+                return  # success on this URL
+            # else: stop thread & try next
+            if ws._ws:
+                ws._ws.close()
+        # nothing yet -> REST seed so the bot can start sizing
+        _seed_prices(self._symbols, self._prices)
 
     def _bar_worker(self):
-        """
-        Every minute build OHLCV bars off the stored last-trade prices.
-        We only need OHLC for ATR, but we reserve V (volume) placeholder
-        for future order-book integration.
-        """
-        last_minute = datetime.now(timezone.utc).replace(second=0, microsecond=0)
-        ohlc: Dict[str, List[float]] = defaultdict(list)
-
+        last = datetime.now(timezone.utc).replace(second=0, microsecond=0)
+        bucket: Dict[str, List[float]] = defaultdict(list)
         while True:
             now = datetime.now(timezone.utc)
-            symbol_prices_snapshot = self._prices.copy()
-
-            # Accumulate intra-minute ticks
-            for sym, price in symbol_prices_snapshot.items():
-                ohlc[sym].append(price)
-
-            # Roll bar on minute switch
-            if now - last_minute >= timedelta(seconds=ONE_MIN):
-                for sym, prices in ohlc.items():
+            for s, px in self._prices.items():
+                bucket[s].append(px)
+            if now >= last + timedelta(minutes=1):
+                for s, prices in bucket.items():
                     if prices:
                         o, h, l, c = prices[0], max(prices), min(prices), prices[-1]
-                        self._bars[sym].append((o, h, l, c))
-                ohlc = defaultdict(list)
-                last_minute = now
+                        self._bars[s].append((o, h, l, c))
+                bucket.clear()
+                last = now.replace(second=0, microsecond=0)
             time.sleep(1)
 
 
-# helper to expose singleton easily
-_market = None
+# ---------------------------------------------------------------- helper
+_market: MarketData | None = None
 
 
-def get_market(symbols: List[str]):
+def get_market(symbols: List[str] = SYMBOLS) -> MarketData:
     global _market
     if _market is None:
         _market = MarketData(symbols)

@@ -1,7 +1,7 @@
-from atlasbot import trader, secrets_loader
-from trader import CoinbaseTrader
+# tests/test_trader.py
+from atlasbot.trader import TradingBot
+from atlasbot.gpt_report import GPTTrendAnalyzer
 
-bot = CoinbaseTrader()
-
-print("\n📈 BTC-USD Best Bid/Ask:")
-print(bot.get_best_bid_ask("BTC-USD"))
+def test_bot_init():
+    bot = TradingBot(gpt_trend_analyzer=GPTTrendAnalyzer(False))
+    assert "BTC-USD" in bot.profit_target_map
