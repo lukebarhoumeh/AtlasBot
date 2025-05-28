@@ -21,6 +21,7 @@ from atlasbot.config import (
 )
 from atlasbot import risk
 from atlasbot.ai_desk import AIDesk
+from atlasbot.secrets_loader import get_openai_api_key
 
 
 class TradingBot:
@@ -178,7 +179,7 @@ class IntradayTrader:
 
 
 async def desk_runner():
-    if not os.getenv("OPENAI_API_KEY"):
+    if not get_openai_api_key():
         logging.info("[GPT disabled] no OPENAI_API_KEY")
         return
     desk = AIDesk()
