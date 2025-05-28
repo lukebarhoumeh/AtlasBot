@@ -31,11 +31,10 @@ written to `logs/ai_advisor.log` every 10 minutes when `OPENAI_API_KEY` is set.
 
 ## Environment vars
 
-* OPENAI_MODEL – override model for macro signal (default gpt-4o-mini)
-* LOG_LEVEL    – Python logging level (DEBUG/INFO/WARN)
-* COINBASE_PAPER_KEY – enable real Coinbase paper trading
-* OPENAI_API_KEY – enable GPT desk summaries. This can also be provided via a
-  `.env` file in the project root using `OPENAI_API_KEY=...`.
+* OPENAI_API_KEY      – optional, enable GPT desk
+* COINBASE_PAPER_KEY  – optional, send orders to Coinbase paper
+* LOG_LEVEL           – DEBUG|INFO|WARN|ERROR (default INFO)
+* OPENAI_MODEL        – override model for macro signal (default gpt-4o-mini)
 
 ## Troubleshooting
 

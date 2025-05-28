@@ -18,6 +18,7 @@ from atlasbot.config import (
     MAX_NOTIONAL_USD,
     EXECUTION_BACKEND,
     DESK_SUMMARY_S,
+    RISK_PER_TRADE,
 )
 from atlasbot import risk
 from atlasbot.ai_desk import AIDesk, LOG_PATH as DESK_LOG_PATH
@@ -171,11 +172,16 @@ class IntradayTrader:
         for symbol in PROFIT_TARGETS:
             advice = self.engine.next_advice(symbol)
             side = "buy" if advice["bias"] == "long" else "sell"
-            size_usd = 10 * advice["confidence"]
+            price = fetch_price(symbol)
+            atr = calculate_atr(symbol)
+            equity = risk.equity()
+            conf = max(advice.get("confidence", 0.0), 0.0)
+            size_usd = equity * RISK_PER_TRADE * conf / (atr / price if atr else 1)
             order = {"symbol": symbol, "side": side, "size_usd": size_usd}
             if not risk.check_risk(order):
                 continue
             self.exec.submit_order(side, size_usd, symbol)
+            risk.annotate_last_trade(signals=advice["rationale"], ret=0.0)
 
 
 async def desk_runner():

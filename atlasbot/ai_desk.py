@@ -4,12 +4,40 @@ import logging
 import os
 from pathlib import Path
 import openai
+import time
+from openai import OpenAI
 
 from atlasbot.secrets_loader import get_openai_api_key
+from atlasbot import metrics
 
-openai.api_key = get_openai_api_key()
+client = OpenAI(api_key=get_openai_api_key())
 
-LOG_PATH = Path(os.getenv("LOG_DIR", "logs")).joinpath("ai_advisor.log")
+LOG_PATH = Path(os.getenv("AI_ADVISOR_LOG", "logs/ai_advisor.log"))
+
+
+def _safe_chat(prompt: str, *, model: str, retries=(0, 2, 5, 15, 60)) -> dict:
+    no_key_warned = getattr(_safe_chat, "_warned", False)
+    if not client.api_key:
+        if not no_key_warned:
+            logging.warning("GPT desk disabled: no API key")
+            _safe_chat._warned = True
+        return {"bias": "neutral", "confidence": 0, "headline": "fallback"}
+    for delay in retries:
+        if delay:
+            time.sleep(delay)
+        try:
+            rsp = client.chat.completions.create(
+                model=model,
+                messages=[{"role": "user", "content": prompt}],
+                response_format={"type": "json_object"},
+                timeout=30,
+            )
+            metrics.gpt_last_success_ts.set(time.time())
+            return json.loads(rsp.choices[0].message.content)
+        except (json.JSONDecodeError, openai.RateLimitError, openai.APIError) as exc:
+            logging.warning("GPT desk retry in %ss (%s)", delay, exc)
+    metrics.gpt_errors_total.inc()
+    return {"bias": "neutral", "confidence": 0, "headline": "fallback"}
 
 
 class AIDesk:
@@ -19,28 +47,15 @@ class AIDesk:
         self.ttl = ttl
 
     async def summarize(self, trades: list[dict]) -> dict:
-        if not openai.api_key:
-            raise RuntimeError("no_openai_key")
         prompt = (
             "Summarise recent trades and suggest next action. "
             "Return JSON with keys 'summary', 'score', and 'next_action'. "
             f"Trades: {trades}"
         )[:2000]
-        resp = await asyncio.to_thread(
-            openai.chat.completions.create,
+        return await asyncio.to_thread(
+            _safe_chat,
+            prompt,
             model="gpt-4o",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.3,
-            max_tokens=60,
-            response_format={"type": "json_object"},
         )
-        if isinstance(resp, dict):
-            return resp
-        text = resp.choices[0].message.content.strip()
-        try:
-            return json.loads(text)
-        except json.JSONDecodeError:
-            logging.warning("desk summary JSON decode failed: %s", text)
-            return {}
 
 
