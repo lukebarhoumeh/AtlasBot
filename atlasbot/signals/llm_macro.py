@@ -1,6 +1,12 @@
 import json
-from datetime import datetime, timedelta
-import openai
+import logging
+from datetime import datetime, timedelta, timezone
+from openai import OpenAI
+from atlasbot.config import OPENAI_MODEL
+
+import os
+
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY", ""))
 
 PROMPT = (
     "Summarise the last 12 hours of crypto news. "
@@ -12,15 +18,26 @@ class MacroBias:
     def __init__(self, ttl_minutes: int = 60, enabled: bool = True):
         self.ttl = timedelta(minutes=ttl_minutes)
         self.enabled = enabled
-        self._cache = (0.0, '', datetime.utcnow() - self.ttl)
+        self._cache = (0.0, 'llm_offline', datetime.now(timezone.utc) - self.ttl)
+        self._last_warn = datetime.now(timezone.utc) - timedelta(hours=1)
+
+    def _warn(self, reason: str) -> None:
+        now = datetime.now(timezone.utc)
+        if now - self._last_warn >= timedelta(hours=1):
+            logging.warning("llm_macro disabled: %s", reason)
+            self._last_warn = now
 
     def _call_llm(self) -> tuple[float, str]:
+        if not client.api_key:
+            self._warn("no api key")
+            return 0.0, "llm_offline"
         try:
-            resp = openai.ChatCompletion.create(
-                model="gpt-4o",
+            resp = client.chat.completions.create(
+                model=OPENAI_MODEL,
                 messages=[{"role": "user", "content": PROMPT}],
                 temperature=0.3,
                 max_tokens=60,
+                response_format={"type": "json_object"},
             )
             txt = resp.choices[0].message.content.strip()
             data = json.loads(txt)
@@ -30,11 +47,11 @@ class MacroBias:
             headline = data.get("headline", "")
             return score, headline
         except Exception as exc:                     # noqa: BLE001
-            print(f"[GPT macro error] {exc}")
-            return 0.0, ""
+            self._warn(str(exc))
+            return 0.0, "llm_offline"
 
     def macro_bias(self, _symbol: str) -> float:
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         score, headline, ts = self._cache
         if not self.enabled:
             return score

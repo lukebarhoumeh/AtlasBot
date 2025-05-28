@@ -30,3 +30,8 @@ EXECUTION_BACKEND = "sim"  # "paper" | "live" (future)
 WS_URL_PRO      = "wss://ws-feed.exchange.coinbase.com"       # legacy
 WS_URL_ADVANCED = "wss://advanced-trade-ws.coinbase.com"      # new
 REST_TICKER_FMT = "https://api.exchange.coinbase.com/products/{}/ticker"
+
+# --- LLM configuration ------------------------------------------------------
+import os
+
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
