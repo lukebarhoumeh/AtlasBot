@@ -1,4 +1,7 @@
 import openai
+from atlasbot.secrets_loader import get_openai_api_key
+
+openai.api_key = get_openai_api_key()
 from datetime import datetime, timedelta, timezone
 
 class GPTTrendAnalyzer:

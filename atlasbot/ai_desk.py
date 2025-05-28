@@ -3,7 +3,9 @@ import asyncio
 import os
 import openai
 
-openai.api_key = os.getenv("OPENAI_API_KEY", "")
+from atlasbot.secrets_loader import get_openai_api_key
+
+openai.api_key = get_openai_api_key()
 
 
 class AIDesk:

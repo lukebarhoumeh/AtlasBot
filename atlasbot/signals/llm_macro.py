@@ -3,10 +3,9 @@ import logging
 from datetime import datetime, timedelta, timezone
 from openai import OpenAI
 from atlasbot.config import OPENAI_MODEL
+from atlasbot.secrets_loader import get_openai_api_key
 
-import os
-
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY", ""))
+client = OpenAI(api_key=get_openai_api_key())
 
 PROMPT = (
     "Summarise the last 12 hours of crypto news. "
