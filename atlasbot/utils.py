@@ -27,7 +27,10 @@ def _ensure_ready(timeout: int = 30) -> None:
     you were seeing on slower or firewalled networks.
     """
     if not _md.wait_ready(timeout):
-        raise RuntimeError(f"Market feed still not ready after {timeout}s")
+        msg = f"Market feed still not ready after {timeout}s"
+        if timeout > 15:
+            msg += f" (mode={_md.mode})"
+        raise RuntimeError(msg)
 
 
 # --------------------------------------------------------------------------- façade

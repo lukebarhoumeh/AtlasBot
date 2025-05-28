@@ -19,12 +19,22 @@ from atlasbot.config import (SYMBOLS, WS_URL_PRO,
 ONE_MIN       = 60
 BAR_HISTORY   = 5_000             # ≈ 3.5 days
 SEED_TIMEOUT  = 3                 # s to wait before REST seed
+REST_POLL_INTERVAL = 5            # seconds between REST polling
 
 
 # ---------------------------------------------------------------- WebSocket client (vanilla)
 class _WSClient:
-    def __init__(self, url: str, products: List[str], price_store: Dict[str, float]):
+    def __init__(
+        self,
+        url: str,
+        products: List[str],
+        price_store: Dict[str, float],
+        on_open_cb=None,
+        on_fail_cb=None,
+    ):
         self._url, self._products, self._store = url, products, price_store
+        self._on_open_cb = on_open_cb
+        self._on_fail_cb = on_fail_cb
         self._ws: websocket.WebSocketApp | None = None
 
     # ————— public —————
@@ -38,7 +48,15 @@ class _WSClient:
                 on_error=self._on_err,
                 on_close=self._on_close,
             )
-            self._ws.run_forever(ping_interval=20, ping_timeout=10)
+            try:
+                self._ws.run_forever(ping_interval=20, ping_timeout=10)
+            except Exception as exc:  # noqa: BLE001
+                logging.error("WS error: %s", exc)
+                if self._on_fail_cb:
+                    self._on_fail_cb()
+            else:
+                if self._on_fail_cb:
+                    self._on_fail_cb()
             logging.error("WS closed – retrying in %ds", backoff)
             time.sleep(backoff)
             backoff = min(backoff * 2, 60)
@@ -52,6 +70,8 @@ class _WSClient:
             "channels": ["ticker"],
         }
         self._ws.send(json.dumps(sub))
+        if self._on_open_cb:
+            self._on_open_cb()
 
     def _on_msg(self, _, msg: str):
         try:
@@ -63,9 +83,12 @@ class _WSClient:
 
     def _on_err(self, _, err):
         logging.error("WS error: %s", err)
+        if self._on_fail_cb:
+            self._on_fail_cb()
 
     def _on_close(self, *_):
-        pass
+        if self._on_fail_cb:
+            self._on_fail_cb()
 
 
 def _seed_prices(products: List[str], price_store: Dict[str, float]):
@@ -97,6 +120,9 @@ class MarketData:
         self._bars: Dict[str, Deque[Tuple[float, float, float, float]]] = {
             s: deque(maxlen=BAR_HISTORY) for s in symbols
         }
+        self.mode = "websocket"
+        self.reconnects = 0
+        self._rest_thread: threading.Thread | None = None
 
         # start socket thread (legacy first → auto-fallback handled in _ws_runner)
         threading.Thread(
@@ -110,10 +136,10 @@ class MarketData:
 
     # ————— public API —————
     def wait_ready(self, timeout: int = 15) -> bool:
-        """True if at least one price arrives within *timeout* seconds."""
+        """True if every symbol has at least one price within *timeout* seconds."""
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
-            if self._prices:
+            if all(s in self._prices for s in self._symbols):
                 return True
             time.sleep(0.2)
         return False
@@ -132,21 +158,68 @@ class MarketData:
         # first try legacy; if nothing arrives in SEED_TIMEOUT fallback ➜ advanced
         for url in (WS_URL_PRO, WS_URL_ADVANCED):
             seed_t0 = time.monotonic()
-            ws = _WSClient(url, self._symbols, self._prices)
+            ws = _WSClient(
+                url,
+                self._symbols,
+                self._prices,
+                on_open_cb=self._on_ws_open,
+                on_fail_cb=self._on_ws_fail,
+            )
             t = threading.Thread(target=ws.run_forever, daemon=True)
             t.start()
-            # wait a bit – if prices arrive we’re done
             while time.monotonic() - seed_t0 < SEED_TIMEOUT:
                 if self._prices:
-                    break
+                    return
                 time.sleep(0.2)
-            if self._prices:
-                return  # success on this URL
-            # else: stop thread & try next
             if ws._ws:
                 ws._ws.close()
-        # nothing yet -> REST seed so the bot can start sizing
         _seed_prices(self._symbols, self._prices)
+        self._switch_to_rest()
+        ws = _WSClient(
+            WS_URL_ADVANCED,
+            self._symbols,
+            self._prices,
+            on_open_cb=self._on_ws_open,
+            on_fail_cb=self._on_ws_fail,
+        )
+        threading.Thread(target=ws.run_forever, daemon=True).start()
+
+    # --- websocket callbacks & REST polling ---
+    def _on_ws_open(self) -> None:
+        if self.mode != "websocket":
+            logging.warning("WS reconnected – switching back to WebSocket")
+        self.mode = "websocket"
+
+    def _on_ws_fail(self) -> None:
+        self.reconnects += 1
+        self._switch_to_rest()
+
+    def _switch_to_rest(self) -> None:
+        if self.mode != "rest":
+            logging.warning("⚠️  WS failed – switching to REST polling")
+            self.mode = "rest"
+        self._start_rest_thread()
+
+    def _start_rest_thread(self) -> None:
+        if self._rest_thread and self._rest_thread.is_alive():
+            return
+        self._rest_thread = threading.Thread(
+            target=self._rest_poller, name="RESTPoll", daemon=True
+        )
+        self._rest_thread.start()
+
+    def _rest_poller(self) -> None:
+        import requests
+
+        while self.mode == "rest":
+            for sym in self._symbols:
+                try:
+                    r = requests.get(REST_TICKER_FMT.format(sym), timeout=5)
+                    if r.ok:
+                        self._prices[sym] = float(r.json()["price"])
+                except Exception:  # noqa: BLE001
+                    pass
+            time.sleep(REST_POLL_INTERVAL)
 
     def _bar_worker(self):
         last = datetime.now(timezone.utc).replace(second=0, microsecond=0)
