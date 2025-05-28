@@ -22,6 +22,7 @@ W_MACRO = 0.2
 # --- risk limits ------------------------------------------------------------
 MAX_GROSS_USD = 1_000
 MAX_DAILY_LOSS = 100
+RISK_PER_TRADE = 0.002
 
 # --- execution --------------------------------------------------------------
 EXECUTION_BACKEND = "sim"  # "paper" | "live" (future)

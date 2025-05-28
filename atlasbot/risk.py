@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import json
 from pathlib import Path
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import pandas as pd
 
 from atlasbot.config import (
@@ -28,8 +28,9 @@ class RiskManager:
         self.cash = starting_cash
         self.equity = starting_cash
         self.free_margin = starting_cash
-        self._last_snapshot = datetime.now(timezone.utc).date()
+        self._last_snapshot = datetime.now(timezone.utc)
         self.trades: list[dict] = []
+        self.stats: dict[str, dict] = {}
 
     def _update_inventory(self, symbol: str, qty: float, price: float) -> float:
         lots = self.lots.setdefault(symbol, [])
@@ -110,29 +111,47 @@ class RiskManager:
             "mtm": mtm,
         }
         self.trades.append(trade)
+
+        st = self.stats.setdefault(symbol, {"realised": 0.0, "fees": 0.0, "slip": 0.0, "trades": 0, "gross": 0.0})
+        st["realised"] += realised
+        st["fees"] += fee
+        st["slip"] += slip
+        st["trades"] += 1
+        st["gross"] = st["realised"] + st["fees"] + st["slip"]
         return realised, mtm
 
     def _maybe_snapshot(self) -> None:
         now = datetime.now(timezone.utc)
-        snap = portfolio_snapshot()
-        SUMMARY_PATH.parent.mkdir(exist_ok=True)
-        with open(SUMMARY_PATH, "a") as f:
-            f.write(json.dumps(snap) + "\n")
-        if now.date() != self._last_snapshot:
-            total_realised = sum(self.realised.values())
-            total_mtm = 0.0
-            for sym, lots in self.lots.items():
-                px = fetch_price(sym)
-                total_mtm += sum(q * (px - p) for q, p in lots)
-            row = {
-                "date": self._last_snapshot.isoformat(),
-                "realised": round(total_realised, 4),
-                "mtm": round(total_mtm, 4),
-            }
-            pd.DataFrame([row]).to_csv(
-                DAILY_PATH, mode="a", header=not os.path.exists(DAILY_PATH), index=False
-            )
-            self._last_snapshot = now.date()
+        if now - self._last_snapshot >= timedelta(minutes=5):
+            row = self._summary_row(now)
+            SUMMARY_PATH.parent.mkdir(exist_ok=True)
+            with open(SUMMARY_PATH, "a") as f:
+                f.write(json.dumps(row) + "\n")
+            self._last_snapshot = now
+
+    def _summary_row(self, now: datetime) -> dict:
+        total_realised = sum(self.realised.values())
+        total_mtm = 0.0
+        row: dict[str, float | str] = {
+            "ts": now.isoformat(),
+            "equity": 0.0,
+            "cash": round(self.cash, 4),
+            "realised": round(total_realised, 4),
+            "fees": round(sum(t["fee"] for t in self.trades), 4),
+            "slip": round(sum(t["slip"] for t in self.trades), 4),
+            "mtm": 0.0,
+        }
+        for sym, lots in self.lots.items():
+            px = fetch_price(sym)
+            mtm = sum(q * (px - p) for q, p in lots)
+            total_mtm += mtm
+            pos = sum(q for q, _ in lots)
+            tag = sym.split("-")[0]
+            row[f"{tag}.net"] = round(self.realised.get(sym, 0.0) + mtm, 4)
+            row[f"{tag}.size"] = round(pos, 8)
+        row["equity"] = round(self.cash + total_mtm, 4)
+        row["mtm"] = round(total_mtm, 4)
+        return row
 
 _risk = RiskManager()
 
@@ -186,6 +205,15 @@ def last_trades(seconds: int) -> list[dict]:
     return [t for t in _risk.trades if datetime.fromisoformat(t["timestamp"]).timestamp() >= cutoff]
 
 
+def last_fills(n: int = 200) -> list[dict]:
+    return _risk.trades[-n:]
+
+
+def annotate_last_trade(**extra) -> None:
+    if _risk.trades:
+        _risk.trades[-1].update(extra)
+
+
 def total_mtm() -> float:
     tot = 0.0
     for sym, lots in _risk.lots.items():
@@ -204,3 +232,7 @@ def equity() -> float:
 
 def snapshot() -> None:
     _risk._maybe_snapshot()
+
+
+def summary_row() -> dict:
+    return _risk._summary_row(datetime.now(timezone.utc))

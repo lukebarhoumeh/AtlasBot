@@ -1,4 +1,4 @@
-from prometheus_client import Gauge, start_http_server
+from prometheus_client import Gauge, Counter, start_http_server
 import threading
 import time
 
@@ -15,6 +15,8 @@ gross_pos_g = Gauge('atlasbot_gross_position_usd', 'Gross position USD')
 cash_g = Gauge('atlasbot_cash_usd', 'Available cash')
 equity_g = Gauge('atlasbot_equity_usd', 'Total account equity')
 heartbeat_g = Gauge('bot_alive', 'Bot heartbeat')
+gpt_errors_total = Counter('gpt_errors_total', 'GPT desk errors')
+gpt_last_success_ts = Gauge('gpt_last_success_ts', 'GPT desk last success timestamp')
 
 
 def start_metrics_server(port: int = 9000) -> None:

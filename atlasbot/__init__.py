@@ -1,4 +1,6 @@
 """AtlasBot – automated crypto trading package."""
+from dotenv import load_dotenv
+load_dotenv()
 __all__ = [
     "config",
     "market_data",
