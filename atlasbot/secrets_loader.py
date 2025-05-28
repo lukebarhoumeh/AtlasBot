@@ -3,7 +3,11 @@ import boto3
 import base64
 import json
 import os
+from dotenv import load_dotenv
 from botocore.exceptions import ClientError
+
+load_dotenv()
+
 
 def load_secret(secret_name: str, region_name: str = "us-east-1") -> dict:
     try:
@@ -37,6 +41,6 @@ def get_coinbase_credentials():
 def get_openai_api_key():
     env_key = os.getenv("OPENAI_API_KEY")
     if env_key:
-        return env_key
+        return env_key.strip()
     secret = load_secret("atlasbot/openai")
-    return secret.get("OPENAI_API_KEY", "")
+    return secret.get("OPENAI_API_KEY", "").strip()
