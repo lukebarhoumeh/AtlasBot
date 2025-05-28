@@ -173,7 +173,11 @@ class IntradayTrader:
             advice = self.engine.next_advice(symbol)
             side = "buy" if advice["bias"] == "long" else "sell"
             price = fetch_price(symbol)
-            atr = calculate_atr(symbol)
+            try:
+                atr = calculate_atr(symbol)
+            except RuntimeError:
+                logging.info("[%s] waiting for live data warm-up…", symbol)
+                continue
             equity = risk.equity()
             conf = max(advice.get("confidence", 0.0), 0.0)
             size_usd = equity * RISK_PER_TRADE * conf / (atr / price if atr else 1)
