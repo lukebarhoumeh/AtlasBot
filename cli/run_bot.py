@@ -3,11 +3,15 @@ import time
 import signal
 import os
 import logging
+import json
+import atexit
 import openai
 
 from atlasbot.secrets_loader import get_openai_api_key
 from atlasbot.trader import IntradayTrader
 from atlasbot.metrics import start_metrics_server
+from atlasbot import risk
+from atlasbot.risk import SUMMARY_PATH
 
 openai.api_key = get_openai_api_key()
 
@@ -24,10 +28,29 @@ bot = IntradayTrader(backend=args.backend)
 stop_event = False
 end_time = time.time() + args.time if args.time else None
 
+_finalised = False
+
+
+def _finalize() -> None:
+    global _finalised
+    if _finalised:
+        return
+    snap = risk.portfolio_snapshot()
+    snap["timestamp"] = "TOTAL"
+    SUMMARY_PATH.parent.mkdir(exist_ok=True)
+    with open(SUMMARY_PATH, "a") as f:
+        f.write(json.dumps(snap) + "\n")
+    print(f"Final equity: ${snap['equity_usd']:.2f}")
+    _finalised = True
+
+
+atexit.register(_finalize)
+
 
 def _handle_sig(_signum, _frame):
     global stop_event
     stop_event = True
+    _finalize()
 
 
 signal.signal(signal.SIGINT, _handle_sig)
@@ -38,5 +61,4 @@ while not stop_event and (end_time is None or time.time() < end_time):
     time.sleep(5)
 
 print("🛑  Shutdown requested.")
-from atlasbot import risk
-risk.snapshot()
+_finalize()

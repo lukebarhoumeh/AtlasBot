@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import json
+from pathlib import Path
 from datetime import datetime, timezone
 import pandas as pd
 
@@ -15,6 +17,7 @@ from atlasbot.utils import fetch_price
 
 PNL_PATH = "data/logs/pnl.csv"
 DAILY_PATH = "data/logs/daily_pnl.csv"
+SUMMARY_PATH = Path(os.getenv("LOG_DIR", "logs")).joinpath("pnl_summary.jsonl")
 
 
 class RiskManager:
@@ -111,6 +114,10 @@ class RiskManager:
 
     def _maybe_snapshot(self) -> None:
         now = datetime.now(timezone.utc)
+        snap = portfolio_snapshot()
+        SUMMARY_PATH.parent.mkdir(exist_ok=True)
+        with open(SUMMARY_PATH, "a") as f:
+            f.write(json.dumps(snap) + "\n")
         if now.date() != self._last_snapshot:
             total_realised = sum(self.realised.values())
             total_mtm = 0.0
@@ -128,6 +135,34 @@ class RiskManager:
             self._last_snapshot = now.date()
 
 _risk = RiskManager()
+
+
+def portfolio_snapshot() -> dict:
+    ts = datetime.now(timezone.utc).isoformat()
+    unreal_total = 0.0
+    per_symbol: dict[str, dict] = {}
+    for sym, lots in _risk.lots.items():
+        px = fetch_price(sym)
+        mtm = sum(q * (px - p) for q, p in lots)
+        pos = sum(q for q, _ in lots)
+        per_symbol[sym] = {
+            "pos": round(pos, 8),
+            "mtm": round(mtm, 4),
+            "realised": round(_risk.realised.get(sym, 0.0), 4),
+        }
+        unreal_total += mtm
+    fees = sum(t["fee"] for t in _risk.trades)
+    slippage = sum(t["slip"] for t in _risk.trades)
+    snap = {
+        "timestamp": ts,
+        "equity_usd": round(_risk.cash + unreal_total, 4),
+        "cash_usd": round(_risk.cash, 4),
+        "unreal_mtm_usd": round(unreal_total, 4),
+        "fees_usd": round(fees, 4),
+        "slippage_usd": round(slippage, 4),
+        "per_symbol": per_symbol,
+    }
+    return snap
 
 
 def check_risk(order: dict) -> bool:

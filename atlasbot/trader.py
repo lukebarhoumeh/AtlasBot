@@ -13,14 +13,14 @@ from atlasbot.gpt_report import GPTTrendAnalyzer
 from atlasbot.decision_engine import DecisionEngine
 from atlasbot.execution import get_backend
 from atlasbot.config import (
-    LOG_PATH,
+    LOG_PATH as TRADE_LOG_PATH,
     PROFIT_TARGETS,
     MAX_NOTIONAL_USD,
     EXECUTION_BACKEND,
     DESK_SUMMARY_S,
 )
 from atlasbot import risk
-from atlasbot.ai_desk import AIDesk
+from atlasbot.ai_desk import AIDesk, LOG_PATH as DESK_LOG_PATH
 from atlasbot.secrets_loader import get_openai_api_key
 
 
@@ -37,7 +37,7 @@ class TradingBot:
         profit_target_map: Optional[Dict[str, float]] = None,
         max_notional_usd: Optional[float] = None,
         gpt_trend_analyzer: Optional[GPTTrendAnalyzer] = None,
-        log_file: str = LOG_PATH,
+        log_file: str = TRADE_LOG_PATH,
     ):
         self.profit_target_map = profit_target_map or PROFIT_TARGETS
         self.max_notional_usd = max_notional_usd or MAX_NOTIONAL_USD
@@ -183,13 +183,20 @@ async def desk_runner():
         logging.info("[GPT disabled] no OPENAI_API_KEY")
         return
     desk = AIDesk()
+    interval = desk.ttl
     while True:
-        await asyncio.sleep(DESK_SUMMARY_S)
-        trades = risk.last_trades(DESK_SUMMARY_S)
+        await asyncio.sleep(interval)
+        trades = risk.last_trades(interval)
+        if not trades:
+            logging.info("[GPT desk] No recent trades")
+            continue
         try:
             summ = await desk.summarize(trades)
+            if not summ:
+                continue
             logging.info("[GPT] %s", summ.get("summary", ""))
-            with open("logs/ai_advisor.log", "a") as f:
+            DESK_LOG_PATH.parent.mkdir(exist_ok=True)
+            with open(DESK_LOG_PATH, "a") as f:
                 f.write(summ.get("summary", "") + "\n")
         except Exception as exc:  # noqa: BLE001
             logging.error("desk_runner: %s", exc)
