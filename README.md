@@ -25,3 +25,7 @@ Run the bot in simulation or paper mode:
 python -m cli.run_bot --backend sim   # default
 python -m cli.run_bot --backend paper
 ```
+
+## Environment vars
+
+* OPENAI_MODEL – override model for macro signal (default gpt-4o-mini)
