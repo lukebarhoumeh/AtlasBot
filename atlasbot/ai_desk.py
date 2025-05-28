@@ -1,15 +1,21 @@
-import json
 import asyncio
+import json
+import logging
 import os
+from pathlib import Path
 import openai
 
 from atlasbot.secrets_loader import get_openai_api_key
 
 openai.api_key = get_openai_api_key()
 
+LOG_PATH = Path(os.getenv("LOG_DIR", "logs")).joinpath("ai_advisor.log")
+
 
 class AIDesk:
-    def __init__(self, ttl: int = 600):
+    def __init__(self, ttl: int | None = None):
+        if ttl is None:
+            ttl = int(os.getenv("GPT_DESK_INTERVAL_MIN", "10")) * 60
         self.ttl = ttl
 
     async def summarize(self, trades: list[dict]) -> dict:
@@ -31,6 +37,10 @@ class AIDesk:
         if isinstance(resp, dict):
             return resp
         text = resp.choices[0].message.content.strip()
-        return json.loads(text)
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            logging.warning("desk summary JSON decode failed: %s", text)
+            return {}
 
 
