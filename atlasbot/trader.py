@@ -1,4 +1,8 @@
 import time
+import asyncio
+import logging
+import os
+import threading
 from datetime import datetime, timezone
 from typing import Dict, Optional
 
@@ -13,8 +17,10 @@ from atlasbot.config import (
     PROFIT_TARGETS,
     MAX_NOTIONAL_USD,
     EXECUTION_BACKEND,
+    DESK_SUMMARY_S,
 )
 from atlasbot import risk
+from atlasbot.ai_desk import AIDesk
 
 
 class TradingBot:
@@ -148,10 +154,12 @@ class IntradayTrader:
                  pnl_file: str = "data/logs/pnl.csv"):
         self.engine = decision_engine or DecisionEngine()
         self.exec = get_backend(backend)
-        self.positions: Dict[str, list[tuple[float, float]]] = {s: [] for s in PROFIT_TARGETS}
-        self.realised = {s: 0.0 for s in PROFIT_TARGETS}
         self.pnl_file = pnl_file
-        self._last_pnl_print = time.time()
+        try:
+            asyncio.get_running_loop().create_task(desk_runner())
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            threading.Thread(target=loop.run_until_complete, args=(desk_runner(),), daemon=True).start()
 
     # --------------------------------------------------------------- main loop
     def run_cycle(self) -> None:
@@ -162,70 +170,22 @@ class IntradayTrader:
             order = {"symbol": symbol, "side": side, "size_usd": size_usd}
             if not risk.check_risk(order):
                 continue
-            exec_id, qty, price = self.exec.submit_order(side, size_usd, symbol)
-            delta = qty * price if side == "buy" else -qty * price
-            realised = self._update_inventory(symbol, qty if side == "buy" else -qty, price)
-            risk.update_position(symbol, delta)
-            risk.add_pnl(realised)
-        if time.time() - self._last_pnl_print >= 300:
-            self._log_pnl()
-            self._last_pnl_print = time.time()
+            self.exec.submit_order(side, size_usd, symbol)
 
-    # --------------------------------------------------------------- inventory
-    def _update_inventory(self, symbol: str, qty: float, price: float) -> float:
-        lots = self.positions[symbol]
-        realised = 0.0
-        if qty > 0:
-            while qty and lots and lots[0][0] < 0:
-                lqty, lprice = lots[0]
-                close = min(qty, -lqty)
-                realised += (lprice - price) * close
-                lqty += close
-                qty -= close
-                if lqty == 0:
-                    lots.pop(0)
-                else:
-                    lots[0] = (lqty, lprice)
-            if qty:
-                lots.append((qty, price))
-        else:
-            qty = -qty
-            while qty and lots and lots[0][0] > 0:
-                lqty, lprice = lots[0]
-                close = min(qty, lqty)
-                realised += (price - lprice) * close
-                lqty -= close
-                qty -= close
-                if lqty == 0:
-                    lots.pop(0)
-                else:
-                    lots[0] = (lqty, lprice)
-            if qty:
-                lots.append((-qty, price))
-        self.realised[symbol] += realised
-        return realised
 
-    def _log_pnl(self) -> None:
-        rows = []
-        ts = datetime.utcnow().isoformat()
-        for sym, lots in self.positions.items():
-            qty = sum(q for q, _ in lots)
-            avg_price = sum(q * p for q, p in lots) / qty if qty else 0.0
-            mtm = qty * (fetch_price(sym) - avg_price)
-            row = {
-                "ts": ts,
-                "symbol": sym,
-                "pos": qty,
-                "avg_price": avg_price,
-                "mtm": mtm,
-                "realised": self.realised[sym],
-            }
-            rows.append(row)
-        pd.DataFrame(rows).to_csv(self.pnl_file, mode="a", header=not self._csv_exists2(), index=False)
-
-    def _csv_exists2(self) -> bool:
+async def desk_runner():
+    if not os.getenv("OPENAI_API_KEY"):
+        logging.info("[GPT disabled] no OPENAI_API_KEY")
+        return
+    desk = AIDesk()
+    while True:
+        await asyncio.sleep(DESK_SUMMARY_S)
+        trades = risk.last_trades(DESK_SUMMARY_S)
         try:
-            with open(self.pnl_file, "r"):
-                return True
-        except FileNotFoundError:
-            return False
+            summ = await desk.summarize(trades)
+            logging.info("[GPT] %s", summ.get("summary", ""))
+            with open("logs/ai_advisor.log", "a") as f:
+                f.write(summ.get("summary", "") + "\n")
+        except Exception as exc:  # noqa: BLE001
+            logging.error("desk_runner: %s", exc)
+

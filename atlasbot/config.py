@@ -35,3 +35,11 @@ REST_TICKER_FMT = "https://api.exchange.coinbase.com/products/{}/ticker"
 import os
 
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+
+# --- misc -----------------------------------------------------------------
+LOG_HEARTBEAT_S = 60
+DESK_SUMMARY_S = 600
+FEE_RATE = 0.0003
+FEE_MIN_USD = 0.10
+SLIP_PCT_STD = 0.0001  # 0.01 %
+

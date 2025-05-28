@@ -26,6 +26,9 @@ python -m cli.run_bot --backend sim   # default
 python -m cli.run_bot --backend paper
 ```
 
+Metrics are exposed at http://localhost:9000/metrics. GPT desk summaries are
+written to `logs/ai_advisor.log` every 10 minutes when `OPENAI_API_KEY` is set.
+
 ## Environment vars
 
 * OPENAI_MODEL – override model for macro signal (default gpt-4o-mini)
