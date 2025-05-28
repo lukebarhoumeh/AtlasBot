@@ -15,7 +15,11 @@ class AIDesk:
     async def summarize(self, trades: list[dict]) -> dict:
         if not openai.api_key:
             raise RuntimeError("no_openai_key")
-        prompt = f"Summarise recent trades: {trades}"[:2000]
+        prompt = (
+            "Summarise recent trades and suggest next action. "
+            "Return JSON with keys 'summary', 'score', and 'next_action'. "
+            f"Trades: {trades}"
+        )[:2000]
         resp = await asyncio.to_thread(
             openai.chat.completions.create,
             model="gpt-4o",
