@@ -34,3 +34,11 @@ written to `logs/ai_advisor.log` every 10 minutes when `OPENAI_API_KEY` is set.
 * OPENAI_MODEL – override model for macro signal (default gpt-4o-mini)
 * LOG_LEVEL    – Python logging level (DEBUG/INFO/WARN)
 * COINBASE_PAPER_KEY – enable real Coinbase paper trading
+* OPENAI_API_KEY – enable GPT desk summaries
+
+## Troubleshooting
+
+**`no_openai_key` error** – The bot tried to call GPT features but no API key
+was found. Set the `OPENAI_API_KEY` environment variable to your OpenAI key, or
+store it in the AWS secret `atlasbot/openai` so `secrets_loader` can retrieve
+it.
