@@ -39,7 +39,12 @@ OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 # --- misc -----------------------------------------------------------------
 LOG_HEARTBEAT_S = 60
 DESK_SUMMARY_S = 600
-FEE_RATE = 0.0003
 FEE_MIN_USD = 0.10
-SLIP_PCT_STD = 0.0001  # 0.01 %
+
+# execution costs
+TAKER_FEE = 0.0025            # Coinbase taker fee
+SLIPPAGE_BPS = 3              # simulated slippage (basis points)
+
+# starting capital
+START_CASH = 50_000.0
 

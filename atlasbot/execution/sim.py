@@ -1,14 +1,14 @@
 import time
 import random
 from atlasbot.utils import fetch_price
-from atlasbot.config import SLIP_PCT_STD
+from atlasbot.config import SLIPPAGE_BPS
 from .base import log_fill
 
 
 def submit_order(side: str, size_usd: float, symbol: str) -> str:
     """Simulated immediate fill at current market price."""
     price = fetch_price(symbol)
-    slip_pct = random.gauss(0, SLIP_PCT_STD)
+    slip_pct = random.gauss(0, SLIPPAGE_BPS / 10_000)
     fill_price = price * (1 + slip_pct)
     qty = size_usd / fill_price
     exec_id = f"sim-{time.time()}"

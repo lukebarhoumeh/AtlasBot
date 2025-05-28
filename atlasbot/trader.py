@@ -73,6 +73,7 @@ class TradingBot:
                 qty=qty,
                 entry_price=price,
                 profit_target_pct=pt_pct,
+                atr=atr,
             )
             # -------------------------------------
 
@@ -105,15 +106,18 @@ class TradingBot:
         qty: float,
         entry_price: float,
         profit_target_pct: float,
+        atr: float,
         timeout_s: int = 300,
     ) -> tuple[float, int]:
         """TP / SL / max-hold simulation loop."""
         tp = entry_price * (1 + profit_target_pct) if side == "buy" else entry_price * (
             1 - profit_target_pct
         )
-        sl = entry_price * (1 - profit_target_pct) if side == "buy" else entry_price * (
+        sl_pt = entry_price * (1 - profit_target_pct) if side == "buy" else entry_price * (
             1 + profit_target_pct
         )
+        sl_atr = entry_price - 2 * atr if side == "buy" else entry_price + 2 * atr
+        sl = min(sl_pt, sl_atr) if side == "buy" else max(sl_pt, sl_atr)
 
         start = time.time()
         while True:
