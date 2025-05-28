@@ -7,6 +7,7 @@ cryptography
 requests>=2.32          # keep everything else happy
 websocket-client>=1.8
 six>=1.17
+prometheus_client
 
 # Coinbase live data
 cbpro2                  # drop the obsolete cbpro

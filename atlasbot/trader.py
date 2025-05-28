@@ -6,11 +6,15 @@ import pandas as pd
 
 from atlasbot.utils import fetch_price, calculate_atr, fetch_volatility
 from atlasbot.gpt_report import GPTTrendAnalyzer
+from atlasbot.decision_engine import DecisionEngine
+from atlasbot.execution import get_backend
 from atlasbot.config import (
     LOG_PATH,
     PROFIT_TARGETS,
     MAX_NOTIONAL_USD,
+    EXECUTION_BACKEND,
 )
+from atlasbot import risk
 
 
 class TradingBot:
@@ -132,6 +136,96 @@ class TradingBot:
     def _csv_exists(self) -> bool:
         try:
             with open(self.log_file, "r"):
+                return True
+        except FileNotFoundError:
+            return False
+
+
+class IntradayTrader:
+    """Alpha-driven trader with risk and PnL tracking."""
+
+    def __init__(self, decision_engine: DecisionEngine | None = None, backend: str = EXECUTION_BACKEND,
+                 pnl_file: str = "data/logs/pnl.csv"):
+        self.engine = decision_engine or DecisionEngine()
+        self.exec = get_backend(backend)
+        self.positions: Dict[str, list[tuple[float, float]]] = {s: [] for s in PROFIT_TARGETS}
+        self.realised = {s: 0.0 for s in PROFIT_TARGETS}
+        self.pnl_file = pnl_file
+        self._last_pnl_print = time.time()
+
+    # --------------------------------------------------------------- main loop
+    def run_cycle(self) -> None:
+        for symbol in PROFIT_TARGETS:
+            advice = self.engine.next_advice(symbol)
+            side = "buy" if advice["bias"] == "long" else "sell"
+            size_usd = 10 * advice["confidence"]
+            order = {"symbol": symbol, "side": side, "size_usd": size_usd}
+            if not risk.check_risk(order):
+                continue
+            exec_id, qty, price = self.exec.submit_order(side, size_usd, symbol)
+            delta = qty * price if side == "buy" else -qty * price
+            realised = self._update_inventory(symbol, qty if side == "buy" else -qty, price)
+            risk.update_position(symbol, delta)
+            risk.add_pnl(realised)
+        if time.time() - self._last_pnl_print >= 300:
+            self._log_pnl()
+            self._last_pnl_print = time.time()
+
+    # --------------------------------------------------------------- inventory
+    def _update_inventory(self, symbol: str, qty: float, price: float) -> float:
+        lots = self.positions[symbol]
+        realised = 0.0
+        if qty > 0:
+            while qty and lots and lots[0][0] < 0:
+                lqty, lprice = lots[0]
+                close = min(qty, -lqty)
+                realised += (lprice - price) * close
+                lqty += close
+                qty -= close
+                if lqty == 0:
+                    lots.pop(0)
+                else:
+                    lots[0] = (lqty, lprice)
+            if qty:
+                lots.append((qty, price))
+        else:
+            qty = -qty
+            while qty and lots and lots[0][0] > 0:
+                lqty, lprice = lots[0]
+                close = min(qty, lqty)
+                realised += (price - lprice) * close
+                lqty -= close
+                qty -= close
+                if lqty == 0:
+                    lots.pop(0)
+                else:
+                    lots[0] = (lqty, lprice)
+            if qty:
+                lots.append((-qty, price))
+        self.realised[symbol] += realised
+        return realised
+
+    def _log_pnl(self) -> None:
+        rows = []
+        ts = datetime.utcnow().isoformat()
+        for sym, lots in self.positions.items():
+            qty = sum(q for q, _ in lots)
+            avg_price = sum(q * p for q, p in lots) / qty if qty else 0.0
+            mtm = qty * (fetch_price(sym) - avg_price)
+            row = {
+                "ts": ts,
+                "symbol": sym,
+                "pos": qty,
+                "avg_price": avg_price,
+                "mtm": mtm,
+                "realised": self.realised[sym],
+            }
+            rows.append(row)
+        pd.DataFrame(rows).to_csv(self.pnl_file, mode="a", header=not self._csv_exists2(), index=False)
+
+    def _csv_exists2(self) -> bool:
+        try:
+            with open(self.pnl_file, "r"):
                 return True
         except FileNotFoundError:
             return False

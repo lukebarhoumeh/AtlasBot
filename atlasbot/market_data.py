@@ -78,6 +78,7 @@ class _WSClient:
             j = json.loads(msg)
             if j.get("type") == "ticker":
                 self._store[j["product_id"]] = float(j["price"])
+                self._last_update = time.monotonic()
         except Exception as exc:                         # noqa: BLE001
             logging.debug("malformed ws msg: %s (%s)", msg[:120], exc)
 
@@ -99,6 +100,11 @@ def _seed_prices(products: List[str], price_store: Dict[str, float]):
         try:
             r = requests.get(REST_TICKER_FMT.format(p), timeout=2).json()
             price_store[p] = float(r["price"])
+            try:
+                _md = get_market()
+                _md._last_update = time.monotonic()
+            except Exception:
+                pass
         except Exception:                                # noqa: BLE001
             pass
 
@@ -120,6 +126,7 @@ class MarketData:
         self._bars: Dict[str, Deque[Tuple[float, float, float, float]]] = {
             s: deque(maxlen=BAR_HISTORY) for s in symbols
         }
+        self._last_update = time.monotonic()
         self.mode = "websocket"
         self.reconnects = 0
         self._rest_thread: threading.Thread | None = None
@@ -153,6 +160,10 @@ class MarketData:
     def minute_bars(self, sym: str) -> Deque[Tuple[float, float, float, float]]:
         return self._bars[sym]
 
+    def feed_latency(self) -> float:
+        """Seconds since the last price update."""
+        return time.monotonic() - self._last_update
+
     # ————— threads —————
     def _ws_runner(self):
         # first try legacy; if nothing arrives in SEED_TIMEOUT fallback ➜ advanced
@@ -174,6 +185,7 @@ class MarketData:
             if ws._ws:
                 ws._ws.close()
         _seed_prices(self._symbols, self._prices)
+        self._last_update = time.monotonic()
         self._switch_to_rest()
         ws = _WSClient(
             WS_URL_ADVANCED,
@@ -217,6 +229,7 @@ class MarketData:
                     r = requests.get(REST_TICKER_FMT.format(sym), timeout=5)
                     if r.ok:
                         self._prices[sym] = float(r.json()["price"])
+                        self._last_update = time.monotonic()
                 except Exception:  # noqa: BLE001
                     pass
             time.sleep(REST_POLL_INTERVAL)
