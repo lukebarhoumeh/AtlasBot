@@ -1,5 +1,5 @@
 import openai
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 class GPTTrendAnalyzer:
     """
@@ -16,11 +16,11 @@ class GPTTrendAnalyzer:
             return "NEUTRAL"
 
         cached = self._cache.get(symbol)
-        if cached and datetime.utcnow() - cached[1] < self.ttl:
+        if cached and datetime.now(timezone.utc) - cached[1] < self.ttl:
             return cached[0]
 
         sentiment = self._call_gpt(symbol)
-        self._cache[symbol] = (sentiment, datetime.utcnow())
+        self._cache[symbol] = (sentiment, datetime.now(timezone.utc))
         return sentiment
 
     # --------------------------------------------------------------------- #
