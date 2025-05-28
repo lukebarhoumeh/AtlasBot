@@ -7,6 +7,9 @@ import pandas as pd
 from atlasbot.config import (
     MAX_GROSS_USD,
     MAX_DAILY_LOSS,
+    START_CASH,
+    TAKER_FEE,
+    FEE_MIN_USD,
 )
 from atlasbot.utils import fetch_price
 
@@ -15,10 +18,13 @@ DAILY_PATH = "data/logs/daily_pnl.csv"
 
 
 class RiskManager:
-    def __init__(self):
+    def __init__(self, starting_cash: float = START_CASH):
         self.lots: dict[str, list[tuple[float, float]]] = {}
         self.realised = {}
         self.daily_pnl = 0.0
+        self.cash = starting_cash
+        self.equity = starting_cash
+        self.free_margin = starting_cash
         self._last_snapshot = datetime.now(timezone.utc).date()
         self.trades: list[dict] = []
 
@@ -65,6 +71,9 @@ class RiskManager:
             return False
         if self.daily_pnl <= -MAX_DAILY_LOSS:
             return False
+        est_fee = max(size_usd * TAKER_FEE, FEE_MIN_USD)
+        if side == "buy" and size_usd + est_fee > self.free_margin:
+            return False
         return True
 
     def record_fill(
@@ -74,8 +83,18 @@ class RiskManager:
         qty = qty if side == "buy" else -qty
         realised = self._update_inventory(symbol, qty, price) - fee
         self.daily_pnl += realised
-        self._maybe_snapshot(price)
+        if side == "buy":
+            self.cash -= notional + fee
+        else:
+            self.cash += notional - fee
         mtm = sum(q * (price - p) for q, p in self.lots.get(symbol, []))
+        unrealised_total = 0.0
+        for sym, lots in self.lots.items():
+            cur_px = fetch_price(sym)
+            unrealised_total += sum(q * (cur_px - p) for q, p in lots)
+        self.equity = self.cash + unrealised_total
+        self.free_margin = self.cash
+        self._maybe_snapshot()
         trade = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "symbol": symbol,
@@ -90,15 +109,14 @@ class RiskManager:
         self.trades.append(trade)
         return realised, mtm
 
-    def _maybe_snapshot(self, price: float) -> None:
+    def _maybe_snapshot(self) -> None:
         now = datetime.now(timezone.utc)
         if now.date() != self._last_snapshot:
             total_realised = sum(self.realised.values())
-            total_mtm = sum(
-                q * (price - p)
-                for lots in self.lots.values()
-                for q, p in lots
-            )
+            total_mtm = 0.0
+            for sym, lots in self.lots.items():
+                px = fetch_price(sym)
+                total_mtm += sum(q * (px - p) for q, p in lots)
             row = {
                 "date": self._last_snapshot.isoformat(),
                 "realised": round(total_realised, 4),
@@ -139,3 +157,15 @@ def total_mtm() -> float:
         price = fetch_price(sym)
         tot += sum(q * (price - p) for q, p in lots)
     return tot
+
+
+def cash() -> float:
+    return _risk.cash
+
+
+def equity() -> float:
+    return _risk.equity
+
+
+def snapshot() -> None:
+    _risk._maybe_snapshot()

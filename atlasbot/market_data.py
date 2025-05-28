@@ -31,10 +31,12 @@ class _WSClient:
         price_store: Dict[str, float],
         on_open_cb=None,
         on_fail_cb=None,
+        on_tick_cb=None,
     ):
         self._url, self._products, self._store = url, products, price_store
         self._on_open_cb = on_open_cb
         self._on_fail_cb = on_fail_cb
+        self._on_tick_cb = on_tick_cb
         self._ws: websocket.WebSocketApp | None = None
 
     # ————— public —————
@@ -79,6 +81,8 @@ class _WSClient:
             if j.get("type") == "ticker":
                 self._store[j["product_id"]] = float(j["price"])
                 self._last_update = time.monotonic()
+                if self._on_tick_cb:
+                    self._on_tick_cb()
         except Exception as exc:                         # noqa: BLE001
             logging.debug("malformed ws msg: %s (%s)", msg[:120], exc)
 
@@ -175,6 +179,7 @@ class MarketData:
                 self._prices,
                 on_open_cb=self._on_ws_open,
                 on_fail_cb=self._on_ws_fail,
+                on_tick_cb=lambda: setattr(self, "_last_update", time.monotonic()),
             )
             t = threading.Thread(target=ws.run_forever, daemon=True)
             t.start()
@@ -193,6 +198,7 @@ class MarketData:
             self._prices,
             on_open_cb=self._on_ws_open,
             on_fail_cb=self._on_ws_fail,
+            on_tick_cb=lambda: setattr(self, "_last_update", time.monotonic()),
         )
         threading.Thread(target=ws.run_forever, daemon=True).start()
 
