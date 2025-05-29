@@ -289,8 +289,13 @@ class MarketData:
             if now >= last + timedelta(minutes=1):
                 for s, prices in bucket.items():
                     if prices:
-                        o, h, l, c = prices[0], max(prices), min(prices), prices[-1]
-                        self._bars[s].append((o, h, l, c))
+                        o, h, low, c = (
+                            prices[0],
+                            max(prices),
+                            min(prices),
+                            prices[-1],
+                        )
+                        self._bars[s].append((o, h, low, c))
                 bucket.clear()
                 last = now.replace(second=0, microsecond=0)
             time.sleep(1)

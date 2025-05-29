@@ -1,13 +1,17 @@
+from datetime import datetime, timedelta, timezone
+
 import openai
+
 from atlasbot.secrets_loader import get_openai_api_key
 
 openai.api_key = get_openai_api_key()
-from datetime import datetime, timedelta, timezone
+
 
 class GPTTrendAnalyzer:
     """
     Caches GPT sentiment per symbol; refreshes every `ttl_minutes`.
     """
+
     def __init__(self, enabled: bool = True, ttl_minutes: int = 30):
         self.enabled = enabled
         self.ttl = timedelta(minutes=ttl_minutes)
@@ -36,7 +40,7 @@ class GPTTrendAnalyzer:
         )
         try:
             resp = openai.ChatCompletion.create(
-                model="gpt-4o-mini",     # cheaper model for high-freq calls
+                model="gpt-4o-mini",  # cheaper model for high-freq calls
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.3,
                 max_tokens=1,

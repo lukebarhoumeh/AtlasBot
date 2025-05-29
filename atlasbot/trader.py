@@ -116,9 +116,11 @@ class TradingBot:
         entry_price: float,
         profit_target_pct: float,
         atr: float,
-        timeout_s: int = 300,
+        timeout_s: int | None = None,
     ) -> tuple[float, int]:
         """TP / SL / max-hold simulation loop."""
+        if timeout_s is None:
+            timeout_s = cfg.MAX_HOLD_MIN * 60
         tp = (
             entry_price * (1 + profit_target_pct)
             if side == "buy"
@@ -239,7 +241,15 @@ class IntradayTrader:
             }
             if not risk.check_risk(order):
                 continue
-            self.exec.submit_order(side, size_usd, symbol)
+            filled = None
+            for _ in range(3):
+                if hasattr(self.exec, "submit_maker_order"):
+                    filled = self.exec.submit_maker_order(side, size_usd, symbol)
+                if filled:
+                    break
+                time.sleep(1)
+            if not filled:
+                self.exec.submit_order(side, size_usd, symbol)
             risk.annotate_last_trade(signals=advice["rationale"], ret=0.0)
 
 

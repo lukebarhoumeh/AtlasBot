@@ -9,7 +9,6 @@ Thin convenience layer around the `MarketData` singleton
 
 from __future__ import annotations
 
-import time
 from typing import List
 
 from atlasbot.config import SYMBOLS
@@ -17,6 +16,7 @@ from atlasbot.market_data import get_market
 
 # single global market-data object
 _md = get_market(SYMBOLS)
+
 
 # --------------------------------------------------------------------------- helpers
 def _ensure_ready(timeout: int = 30) -> None:
@@ -50,8 +50,8 @@ def calculate_atr(symbol: str, period: int = 10) -> float:
     if len(bars) < period + 1:
         return float("nan")
     trs = [
-        max(h, prev_close) - min(l, prev_close)
-        for prev_close, (_, h, l, _) in zip((b[3] for b in bars[:-1]), bars[1:])
+        max(h, prev_close) - min(low, prev_close)
+        for prev_close, (_, h, low, _) in zip((b[3] for b in bars[:-1]), bars[1:])
     ]
     return sum(trs) / period
 

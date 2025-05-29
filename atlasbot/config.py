@@ -61,6 +61,9 @@ LOG_HEARTBEAT_S = 60
 DESK_SUMMARY_S = 600
 FEE_MIN_USD = FEE_FLAT
 
+# configurable max hold time for live and simulated trades (minutes)
+MAX_HOLD_MIN = int(os.getenv("MAX_HOLD_MIN", "30"))
+
 # execution costs
 TAKER_FEE = 0.0025  # Coinbase taker fee
 
