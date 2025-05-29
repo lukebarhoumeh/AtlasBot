@@ -12,3 +12,4 @@ data/logs/*.csv
 # Secrets / keys
 *.pem
 .env
+-e "\n# runtime artefacts\nlogs/\ndata/fills/" 
