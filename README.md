@@ -46,3 +46,7 @@ it.
 **Refreshing market data** – To reset the MarketData singleton during tests or
 runtime, set `atlasbot.market_data._market = None` and call `get_market()`
 again. The helper will now create a fresh instance automatically.
+
+## Development
+
+Continuous integration runs via GitHub Actions in [.github/workflows/ci.yml](.github/workflows/ci.yml).
