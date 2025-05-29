@@ -13,3 +13,4 @@ data/logs/*.csv
 *.pem
 .env
 -e "\n# runtime artefacts\nlogs/\ndata/fills/" 
+data/fills/ 
