@@ -40,7 +40,7 @@ def fetch_price(symbol: str) -> float:
     return _md.latest_trade(symbol)
 
 
-def calculate_atr(symbol: str, period: int = 14) -> float:
+def calculate_atr(symbol: str, period: int = 10) -> float:
     """
     Average True Range over *period* 1-minute bars.
     Raises if insufficient history is available.
@@ -48,7 +48,7 @@ def calculate_atr(symbol: str, period: int = 14) -> float:
     _ensure_ready()
     bars = list(_md.minute_bars(symbol))[-period - 1 :]
     if len(bars) < period + 1:
-        raise RuntimeError(f"Need {period} bars for ATR")
+        return float("nan")
     trs = [
         max(h, prev_close) - min(l, prev_close)
         for prev_close, (_, h, l, _) in zip((b[3] for b in bars[:-1]), bars[1:])
@@ -56,7 +56,7 @@ def calculate_atr(symbol: str, period: int = 14) -> float:
     return sum(trs) / period
 
 
-def fetch_volatility(symbol: str, period: int = 60) -> float:
+def fetch_volatility(symbol: str, period: int = 30) -> float:
     """
     Mean absolute deviation of the closing price over *period* 1-minute bars.
     A quick-and-dirty proxy for intraday volatility.
@@ -64,7 +64,7 @@ def fetch_volatility(symbol: str, period: int = 60) -> float:
     _ensure_ready()
     closes: List[float] = [b[3] for b in list(_md.minute_bars(symbol))[-period:]]
     if len(closes) < period:
-        raise RuntimeError(f"Need {period} closes for volatility")
+        return float("nan")
 
     mean = sum(closes) / len(closes)
     return sum(abs(px - mean) for px in closes) / len(closes)
