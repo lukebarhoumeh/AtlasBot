@@ -1,34 +1,85 @@
-from prometheus_client import Gauge, Counter, start_http_server
 import threading
 import time
 
-from atlasbot.market_data import get_market
-from atlasbot.signals import poll_latency
-from atlasbot.risk import daily_pnl, total_mtm, gross, cash, equity
+import requests
+from prometheus_client import CollectorRegistry, Counter, Gauge, start_http_server
 
-ws_latency_g = Gauge('atlasbot_ws_latency_ms', 'WebSocket price latency (ms)')
-rest_latency_g = Gauge('atlasbot_rest_latency_ms', 'REST poll latency (ms)')
-reconnects_g = Gauge('atlasbot_reconnects_total', 'WebSocket reconnect count')
-pnl_mtm_g = Gauge('atlasbot_pnl_mtm_usd', 'Mark-to-market PnL')
-pnl_realised_g = Gauge('atlasbot_pnl_realised_usd', 'Realised PnL')
-gross_pos_g = Gauge('atlasbot_gross_position_usd', 'Gross position USD')
-cash_g = Gauge('atlasbot_cash_usd', 'Available cash')
-equity_g = Gauge('atlasbot_equity_usd', 'Total account equity')
-heartbeat_g = Gauge('bot_alive', 'Bot heartbeat')
-gpt_errors_total = Counter('gpt_errors_total', 'GPT desk errors')
-gpt_last_success_ts = Gauge('gpt_last_success_ts', 'GPT desk last success timestamp')
-warmup_complete_g = Gauge('atlasbot_warmup_complete', 'Initial bar warmup complete')
+from atlasbot.config import REST_TICKER_FMT
+from atlasbot.market_data import get_market
+from atlasbot.risk import cash, daily_pnl, equity, gross, total_mtm
+from atlasbot.signals import poll_latency
+
+REGISTRY = CollectorRegistry()
+ws_latency_g = Gauge(
+    "atlasbot_ws_latency_ms",
+    "WebSocket price latency (ms)",
+    registry=REGISTRY,
+)
+rest_latency_g = Gauge(
+    "atlasbot_rest_latency_ms",
+    "REST poll latency (ms)",
+    registry=REGISTRY,
+)
+reconnects_g = Gauge(
+    "atlasbot_reconnects_total",
+    "WebSocket reconnect count",
+    registry=REGISTRY,
+)
+pnl_mtm_g = Gauge(
+    "atlasbot_pnl_mtm_usd",
+    "Mark-to-market PnL",
+    registry=REGISTRY,
+)
+pnl_realised_g = Gauge("atlasbot_pnl_realised_usd", "Realised PnL", registry=REGISTRY)
+gross_pos_g = Gauge(
+    "atlasbot_gross_position_usd", "Gross position USD", registry=REGISTRY
+)
+cash_g = Gauge("atlasbot_cash_usd", "Available cash", registry=REGISTRY)
+equity_g = Gauge("atlasbot_equity_usd", "Total account equity", registry=REGISTRY)
+heartbeat_g = Gauge("bot_alive", "Bot heartbeat", registry=REGISTRY)
+gpt_errors_total = Counter("gpt_errors_total", "GPT desk errors", registry=REGISTRY)
+gpt_last_success_ts = Gauge(
+    "gpt_last_success_ts", "GPT desk last success timestamp", registry=REGISTRY
+)
+warmup_complete_g = Gauge(
+    "atlasbot_warmup_complete", "Initial bar warmup complete", registry=REGISTRY
+)
+feed_watchdog_total = Counter(
+    "atlasbot_feed_watchdog_total",
+    "Feed latency watchdog triggers",
+    registry=REGISTRY,
+)
 
 
 def start_metrics_server(port: int = 9000) -> None:
-    start_http_server(port)
+    start_http_server(port, registry=REGISTRY)
     threading.Thread(target=_update_loop, daemon=True).start()
+
+
+def _refresh_prices(symbols: list[str]) -> None:
+    """Update price cache from REST endpoints for *symbols*."""
+    for sym in symbols:
+        try:
+            r = requests.get(REST_TICKER_FMT.format(sym), timeout=5)
+            if r.ok:
+                get_market()._prices[sym] = float(r.json()["price"])
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def feed_watchdog_check() -> None:
+    """Check feed latency and trigger watchdog if necessary."""
+    md = get_market()
+    if md.feed_latency() > 120:
+        feed_watchdog_total.inc()
+        _refresh_prices(md._symbols)
 
 
 def _update_loop() -> None:
     md = get_market()
     last_hb = 0.0
     while True:
+        feed_watchdog_check()
         ws_latency_g.set(md.feed_latency() * 1000)
         rest_latency_g.set(poll_latency() * 1000)
         reconnects_g.set(md.reconnects)
@@ -42,4 +93,3 @@ def _update_loop() -> None:
             heartbeat_g.set(1)
             last_hb = time.time()
         time.sleep(5)
-

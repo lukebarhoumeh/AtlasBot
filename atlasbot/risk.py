@@ -1,17 +1,18 @@
 from __future__ import annotations
 
-import os
 import json
+import os
+import threading
+import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from datetime import datetime, timezone, timedelta
-import pandas as pd
 
 from atlasbot.config import (
-    MAX_GROSS_USD,
+    FEE_MIN_USD,
     MAX_DAILY_LOSS,
+    MAX_GROSS_USD,
     START_CASH,
     TAKER_FEE,
-    FEE_MIN_USD,
 )
 from atlasbot.utils import fetch_price
 
@@ -28,10 +29,12 @@ class RiskManager:
         self.cash = starting_cash
         self.equity = starting_cash
         self.free_margin = starting_cash
+        self.day_start_equity = starting_cash
         self._last_snapshot = datetime.now(timezone.utc)
         self.trades: list[dict] = []
         self.stats: dict[str, dict] = {}
         self.open_fees: dict[str, float] = {}
+        self._lock = threading.Lock()
 
     def _update_inventory(self, symbol: str, qty: float, price: float) -> float:
         lots = self.lots.setdefault(symbol, [])
@@ -67,68 +70,85 @@ class RiskManager:
         return realised
 
     def gross(self, symbol: str) -> float:
-        return sum(abs(q) * p for q, p in self.lots.get(symbol, []))
+        with self._lock:
+            return sum(abs(q) * p for q, p in self.lots.get(symbol, []))
 
     def check_risk(self, symbol: str, side: str, size_usd: float) -> bool:
-        pos = self.gross(symbol)
-        new_pos = pos + size_usd if side == "buy" else pos - size_usd
-        if abs(new_pos) > MAX_GROSS_USD:
-            return False
-        if self.daily_pnl <= -MAX_DAILY_LOSS:
-            return False
-        est_fee = max(size_usd * TAKER_FEE, FEE_MIN_USD)
-        if side == "buy" and size_usd + est_fee > self.free_margin:
-            return False
-        return True
+        with self._lock:
+            pos = sum(abs(q) * p for q, p in self.lots.get(symbol, []))
+            new_pos = pos + size_usd if side == "buy" else pos - size_usd
+            if abs(new_pos) > MAX_GROSS_USD:
+                return False
+            if self.daily_pnl <= -MAX_DAILY_LOSS:
+                return False
+            est_fee = max(size_usd * TAKER_FEE, FEE_MIN_USD)
+            if side == "buy" and size_usd + est_fee > self.free_margin:
+                return False
+            return True
 
     def record_fill(
-        self, symbol: str, side: str, notional: float, price: float, fee: float, slip: float
+        self,
+        symbol: str,
+        side: str,
+        notional: float,
+        price: float,
+        fee: float,
+        slip: float,
     ) -> tuple[float, float]:
-        qty = notional / price
-        qty = qty if side == "buy" else -qty
-        realised = self._update_inventory(symbol, qty, price)
-        pnl = 0.0
-        if realised == 0:
-            self.open_fees[symbol] = self.open_fees.get(symbol, 0.0) + fee
-        else:
-            fee += self.open_fees.pop(symbol, 0.0)
-            pnl = realised - fee
-            self.daily_pnl += pnl
-        if side == "buy":
-            self.cash -= notional + fee
-        else:
-            self.cash += notional - fee
-        mtm = sum(q * (price - p) for q, p in self.lots.get(symbol, []))
-        unrealised_total = 0.0
-        for sym, lots in self.lots.items():
-            cur_px = fetch_price(sym)
-            unrealised_total += sum(q * (cur_px - p) for q, p in lots)
-        self.equity = self.cash + unrealised_total
-        self.free_margin = self.cash
-        self._maybe_snapshot()
-        trade = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "symbol": symbol,
-            "side": side,
-            "notional": notional,
-            "price": price,
-            "fee": fee,
-            "slip": slip,
-            "realised": pnl,
-            "mtm": mtm,
-        }
-        self.trades.append(trade)
+        with self._lock:
+            qty = notional / price
+            qty = qty if side == "buy" else -qty
+            realised = self._update_inventory(symbol, qty, price)
+            pnl = 0.0
+            if realised == 0:
+                self.open_fees[symbol] = self.open_fees.get(symbol, 0.0) + fee
+            else:
+                fee += self.open_fees.pop(symbol, 0.0)
+                pnl = realised - fee
+                self.daily_pnl += pnl
+            if side == "buy":
+                self.cash -= notional + fee
+            else:
+                self.cash += notional - fee
+            mtm = sum(q * (price - p) for q, p in self.lots.get(symbol, []))
+            unrealised_total = 0.0
+            for sym, lots in self.lots.items():
+                try:
+                    cur_px = fetch_price(sym)
+                except RuntimeError:
+                    cur_px = price
+                unrealised_total += sum(q * (cur_px - p) for q, p in lots)
+            self.equity = self.cash + unrealised_total
+            self.free_margin = self.cash
+            self._maybe_snapshot()
+            trade = {
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "symbol": symbol,
+                "side": side,
+                "notional": notional,
+                "price": price,
+                "fee": fee,
+                "slip": slip,
+                "realised": pnl,
+                "mtm": mtm,
+            }
+            self.trades.append(trade)
 
-        st = self.stats.setdefault(symbol, {"realised": 0.0, "fees": 0.0, "slip": 0.0, "trades": 0, "gross": 0.0})
-        st["realised"] += pnl
-        st["fees"] += fee
-        st["slip"] += slip
-        st["trades"] += 1
-        st["gross"] = st["realised"] + st["fees"] + st["slip"]
-        return pnl, mtm
+            st = self.stats.setdefault(
+                symbol,
+                {"realised": 0.0, "fees": 0.0, "slip": 0.0, "trades": 0, "gross": 0.0},
+            )
+            st["realised"] += pnl
+            st["fees"] += fee
+            st["slip"] += slip
+            st["trades"] += 1
+            st["gross"] = st["realised"] + st["fees"] + st["slip"]
+            return pnl, mtm
 
     def _maybe_snapshot(self) -> None:
         now = datetime.now(timezone.utc)
+        if now.date() != self._last_snapshot.date():
+            self.day_start_equity = self.equity
         if now - self._last_snapshot >= timedelta(minutes=5):
             row = self._summary_row(now)
             SUMMARY_PATH.parent.mkdir(exist_ok=True)
@@ -149,7 +169,10 @@ class RiskManager:
             "mtm": 0.0,
         }
         for sym, lots in self.lots.items():
-            px = fetch_price(sym)
+            try:
+                px = fetch_price(sym)
+            except RuntimeError:
+                px = 0.0
             mtm = sum(q * (px - p) for q, p in lots)
             total_mtm += mtm
             pos = sum(q for q, _ in lots)
@@ -160,6 +183,7 @@ class RiskManager:
         row["mtm"] = round(total_mtm, 4)
         return row
 
+
 _risk = RiskManager()
 
 
@@ -168,7 +192,10 @@ def portfolio_snapshot() -> dict:
     unreal_total = 0.0
     per_symbol: dict[str, dict] = {}
     for sym, lots in _risk.lots.items():
-        px = fetch_price(sym)
+        try:
+            px = fetch_price(sym)
+        except RuntimeError:
+            px = 0.0
         mtm = sum(q * (px - p) for q, p in lots)
         pos = sum(q for q, _ in lots)
         per_symbol[sym] = {
@@ -195,7 +222,9 @@ def check_risk(order: dict) -> bool:
     return _risk.check_risk(order["symbol"], order["side"], order["size_usd"])
 
 
-def record_fill(symbol: str, side: str, notional: float, price: float, fee: float, slip: float) -> tuple[float, float]:
+def record_fill(
+    symbol: str, side: str, notional: float, price: float, fee: float, slip: float
+) -> tuple[float, float]:
     return _risk.record_fill(symbol, side, notional, price, fee, slip)
 
 
@@ -209,7 +238,11 @@ def daily_pnl() -> float:
 
 def last_trades(seconds: int) -> list[dict]:
     cutoff = datetime.now(timezone.utc).timestamp() - seconds
-    return [t for t in _risk.trades if datetime.fromisoformat(t["timestamp"]).timestamp() >= cutoff]
+    return [
+        t
+        for t in _risk.trades
+        if datetime.fromisoformat(t["timestamp"]).timestamp() >= cutoff
+    ]
 
 
 def last_fills(n: int = 200) -> list[dict]:
@@ -243,3 +276,24 @@ def snapshot() -> None:
 
 def summary_row() -> dict:
     return _risk._summary_row(datetime.now(timezone.utc))
+
+
+_circuit_until = 0.0
+
+
+def check_circuit_breaker() -> bool:
+    """Return True if daily loss exceeds 2% and circuit is engaged."""
+    global _circuit_until
+    now = time.time()
+    if now < _circuit_until:
+        return True
+    start_eq = _risk.day_start_equity
+    if start_eq and (_risk.equity - start_eq) / start_eq <= -0.02:
+        _circuit_until = now + 3600
+        return True
+    return False
+
+
+def circuit_breaker_active() -> bool:
+    """True if the circuit breaker is currently active."""
+    return time.time() < _circuit_until
