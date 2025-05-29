@@ -13,23 +13,18 @@ import json
 import logging
 import threading
 import time
-import websocket  # type: ignore
-
 from collections import defaultdict, deque
 from datetime import datetime, timedelta, timezone
 from typing import Deque, Dict, List, Tuple
 
-from atlasbot.config import (
-    SYMBOLS,
-    WS_URL_PRO,
-    WS_URL_ADVANCED,
-    REST_TICKER_FMT,
-)
+import websocket  # type: ignore
+
+from atlasbot.config import REST_TICKER_FMT, SYMBOLS, WS_URL_ADVANCED, WS_URL_PRO
 
 ONE_MIN = 60
-BAR_HISTORY = 5_000             # ≈ 3.5 days
-SEED_TIMEOUT = 3                # s to wait before REST seed
-REST_POLL_INTERVAL = 5          # seconds between REST polling
+BAR_HISTORY = 5_000  # ≈ 3.5 days
+SEED_TIMEOUT = 3  # s to wait before REST seed
+REST_POLL_INTERVAL = 5  # seconds between REST polling
 
 
 # ---------------------------------------------------------------- WebSocket client (vanilla)
@@ -62,7 +57,7 @@ class _WSClient:
             )
             try:
                 self._ws.run_forever(ping_interval=20, ping_timeout=10)
-            except Exception as exc:                       # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
                 logging.error("WS error: %s", exc)
                 if self._on_fail_cb:
                     self._on_fail_cb()
@@ -93,7 +88,7 @@ class _WSClient:
                 self._last_update = time.monotonic()
                 if self._on_tick_cb:
                     self._on_tick_cb()
-        except Exception as exc:                           # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
             logging.debug("malformed ws msg: %s (%s)", msg[:120], exc)
 
     def _on_err(self, _, err):
@@ -108,8 +103,9 @@ class _WSClient:
 
 def _seed_prices(products: List[str], price_store: Dict[str, float]):
     """Best-effort REST seed so we’re never empty."""
-    import requests
     import warnings
+
+    import requests
 
     warnings.filterwarnings("ignore", category=UserWarning)
     for p in products:
@@ -121,7 +117,7 @@ def _seed_prices(products: List[str], price_store: Dict[str, float]):
                 _md._last_update = time.monotonic()
             except Exception:
                 pass
-        except Exception:                                   # noqa: BLE001
+        except Exception:  # noqa: BLE001
             pass
 
 
@@ -151,9 +147,7 @@ class MarketData:
         self._warm_start()
 
         # start socket thread (legacy first → auto-fallback handled in _ws_runner)
-        threading.Thread(
-            target=self._ws_runner, name="CBWS", daemon=True
-        ).start()
+        threading.Thread(target=self._ws_runner, name="CBWS", daemon=True).start()
 
         # start bar builder
         threading.Thread(
@@ -177,11 +171,11 @@ class MarketData:
                     _, low, high, open_, close, *_ = row
                     self._bars[sym].append((open_, high, low, close))
 
-                # —— FIX ——  
+                # —— FIX ——
                 # Only set a live price when we *will* wait for WebSocket ticks.
                 # Unit-tests monkey-patch SEED_TIMEOUT = 0 to force REST seeding.
                 if data and SEED_TIMEOUT:
-                    self._prices[sym] = float(data[0][4])       # latest close
+                    self._prices[sym] = float(data[0][4])  # latest close
                     self._last_update = time.monotonic()
             except Exception:
                 pass
@@ -309,5 +303,6 @@ _market: MarketData | None = None
 def get_market(symbols: List[str] = SYMBOLS) -> MarketData:
     global _market
     if _market is None:
+        MarketData._instance = None
         _market = MarketData(symbols)
     return _market

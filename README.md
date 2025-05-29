@@ -42,3 +42,7 @@ written to `logs/ai_advisor.log` every 10 minutes when `OPENAI_API_KEY` is set.
 was found. Set the `OPENAI_API_KEY` environment variable to your OpenAI key, or
 store it in the AWS secret `atlasbot/openai` so `secrets_loader` can retrieve
 it.
+
+**Refreshing market data** – To reset the MarketData singleton during tests or
+runtime, set `atlasbot.market_data._market = None` and call `get_market()`
+again. The helper will now create a fresh instance automatically.
