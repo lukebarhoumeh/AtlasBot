@@ -4,7 +4,7 @@ import time
 from pathlib import Path
 import numpy as np
 from atlasbot.signals import imbalance, momentum, macro_bias
-from atlasbot.config import W_ORDERFLOW, W_MOMENTUM, W_MACRO
+from atlasbot.config import W_ORDERFLOW, W_MOMENTUM, W_MACRO, profit_target
 from atlasbot import risk
 
 ADAPT_TEMP = float(os.getenv("ADAPT_TEMP", "2.0"))
@@ -34,9 +34,11 @@ class DecisionEngine:
             + self.weights["macro"] * ma
         )
         bias = "long" if score > 0 else "short" if score < 0 else "flat"
+        raw_edge = profit_target(symbol) * (score / 1.0)
         return {
             "bias": bias,
             "confidence": abs(score),
+            "edge": raw_edge,
             "rationale": {
                 "orderflow": im,
                 "momentum": mo,

@@ -4,17 +4,20 @@ import logging
 import os
 import threading
 from datetime import datetime, timezone
-from typing import Dict, Optional
+from typing import Optional
+import math
 
 import pandas as pd
 
 from atlasbot.utils import fetch_price, calculate_atr, fetch_volatility
+from atlasbot.market_data import get_market
 from atlasbot.gpt_report import GPTTrendAnalyzer
 from atlasbot.decision_engine import DecisionEngine
 from atlasbot.execution import get_backend
 from atlasbot.config import (
     LOG_PATH as TRADE_LOG_PATH,
-    PROFIT_TARGETS,
+    SYMBOLS,
+    profit_target,
     MAX_NOTIONAL_USD,
     EXECUTION_BACKEND,
     DESK_SUMMARY_S,
@@ -35,31 +38,35 @@ class TradingBot:
     # ----------------------------------------------------------------- life-cycle
     def __init__(
         self,
-        profit_target_map: Optional[Dict[str, float]] = None,
+        symbols: list[str] = SYMBOLS,
         max_notional_usd: Optional[float] = None,
         gpt_trend_analyzer: Optional[GPTTrendAnalyzer] = None,
         log_file: str = TRADE_LOG_PATH,
     ):
-        self.profit_target_map = profit_target_map or PROFIT_TARGETS
+        self.symbols = symbols
         self.max_notional_usd = max_notional_usd or MAX_NOTIONAL_USD
         self.gpt = gpt_trend_analyzer or GPTTrendAnalyzer(enabled=False)
         self.log_file = log_file
+        self._skip_logged: set[str] = set()
 
     # ----------------------------------------------------------------- public API
     def run_cycle(self) -> None:
-        """Iterate once over every symbol in the map."""
-        utc_now = datetime.now(timezone.utc)  # single timestamp for consistency
+        """Iterate once over every configured symbol."""
+        utc_now = datetime.now(timezone.utc)
 
-        for symbol, pt_pct in self.profit_target_map.items():
+        for symbol in self.symbols:
             price = fetch_price(symbol)
 
-            # --- data warm-up guard
-            try:
-                atr = calculate_atr(symbol)
-                vol = fetch_volatility(symbol)
-            except RuntimeError:
-                print(f"[{symbol}] waiting for live data warm-up…")
+            atr = calculate_atr(symbol)
+            vol = fetch_volatility(symbol)
+            if math.isnan(atr) or math.isnan(vol):
+                if symbol not in self._skip_logged:
+                    logging.debug("[SKIP] %s waiting for bars (have=%d)", symbol, len(get_market().minute_bars(symbol)))
+                    self._skip_logged.add(symbol)
                 continue
+            self._skip_logged.discard(symbol)
+
+            pt_pct = profit_target(symbol)
 
             # --- position sizing
             usd_position = min(self.max_notional_usd, (1 / vol) * 100)
@@ -135,7 +142,7 @@ class TradingBot:
             time.sleep(1)
 
     # -------------------------------------- persistence / console
-    def _log_trade(self, trade: Dict) -> None:
+    def _log_trade(self, trade: dict) -> None:
         print(
             f"[{trade['symbol']}] {trade['result']} "
             f"PnL={trade['pnl']}$ Trend={trade['trend_confidence']} "
@@ -161,6 +168,7 @@ class IntradayTrader:
         self.engine = decision_engine or DecisionEngine()
         self.exec = get_backend(backend)
         self.pnl_file = pnl_file
+        self._skip_logged: set[str] = set()
         try:
             asyncio.get_running_loop().create_task(desk_runner())
         except RuntimeError:
@@ -169,19 +177,22 @@ class IntradayTrader:
 
     # --------------------------------------------------------------- main loop
     def run_cycle(self) -> None:
-        for symbol in PROFIT_TARGETS:
+        md = get_market()
+        for symbol in SYMBOLS:
             advice = self.engine.next_advice(symbol)
             side = "buy" if advice["bias"] == "long" else "sell"
             price = fetch_price(symbol)
-            try:
-                atr = calculate_atr(symbol)
-            except RuntimeError:
-                logging.info("[%s] waiting for live data warm-up…", symbol)
+            atr = calculate_atr(symbol)
+            if math.isnan(atr):
+                if symbol not in self._skip_logged:
+                    logging.debug("[SKIP] %s waiting for bars (have=%d)", symbol, len(md.minute_bars(symbol)))
+                    self._skip_logged.add(symbol)
                 continue
+            self._skip_logged.discard(symbol)
             equity = risk.equity()
             conf = max(advice.get("confidence", 0.0), 0.0)
             size_usd = equity * RISK_PER_TRADE * conf / (atr / price if atr else 1)
-            order = {"symbol": symbol, "side": side, "size_usd": size_usd}
+            order = {"symbol": symbol, "side": side, "size_usd": size_usd, "take_profit": price * (1 + advice.get("edge", 0.0))}
             if not risk.check_risk(order):
                 continue
             self.exec.submit_order(side, size_usd, symbol)

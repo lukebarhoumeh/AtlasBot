@@ -4,4 +4,4 @@ from atlasbot.gpt_report import GPTTrendAnalyzer
 
 def test_bot_init():
     bot = TradingBot(gpt_trend_analyzer=GPTTrendAnalyzer(False))
-    assert "BTC-USD" in bot.profit_target_map
+    assert "BTC-USD" in bot.symbols

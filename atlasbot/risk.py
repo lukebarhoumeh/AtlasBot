@@ -31,6 +31,7 @@ class RiskManager:
         self._last_snapshot = datetime.now(timezone.utc)
         self.trades: list[dict] = []
         self.stats: dict[str, dict] = {}
+        self.open_fees: dict[str, float] = {}
 
     def _update_inventory(self, symbol: str, qty: float, price: float) -> float:
         lots = self.lots.setdefault(symbol, [])
@@ -85,8 +86,14 @@ class RiskManager:
     ) -> tuple[float, float]:
         qty = notional / price
         qty = qty if side == "buy" else -qty
-        realised = self._update_inventory(symbol, qty, price) - fee
-        self.daily_pnl += realised
+        realised = self._update_inventory(symbol, qty, price)
+        pnl = 0.0
+        if realised == 0:
+            self.open_fees[symbol] = self.open_fees.get(symbol, 0.0) + fee
+        else:
+            fee += self.open_fees.pop(symbol, 0.0)
+            pnl = realised - fee
+            self.daily_pnl += pnl
         if side == "buy":
             self.cash -= notional + fee
         else:
@@ -107,18 +114,18 @@ class RiskManager:
             "price": price,
             "fee": fee,
             "slip": slip,
-            "realised": realised,
+            "realised": pnl,
             "mtm": mtm,
         }
         self.trades.append(trade)
 
         st = self.stats.setdefault(symbol, {"realised": 0.0, "fees": 0.0, "slip": 0.0, "trades": 0, "gross": 0.0})
-        st["realised"] += realised
+        st["realised"] += pnl
         st["fees"] += fee
         st["slip"] += slip
         st["trades"] += 1
         st["gross"] = st["realised"] + st["fees"] + st["slip"]
-        return realised, mtm
+        return pnl, mtm
 
     def _maybe_snapshot(self) -> None:
         now = datetime.now(timezone.utc)

@@ -13,8 +13,12 @@ from collections import defaultdict, deque
 from datetime import datetime, timedelta, timezone
 from typing import Deque, Dict, List, Tuple
 
-from atlasbot.config import (SYMBOLS, WS_URL_PRO,
-                             WS_URL_ADVANCED, REST_TICKER_FMT)
+from atlasbot.config import (
+    SYMBOLS,
+    WS_URL_PRO,
+    WS_URL_ADVANCED,
+    REST_TICKER_FMT,
+)
 
 ONE_MIN       = 60
 BAR_HISTORY   = 5_000             # ≈ 3.5 days
@@ -134,6 +138,9 @@ class MarketData:
         self.mode = "websocket"
         self.reconnects = 0
         self._rest_thread: threading.Thread | None = None
+        self.warmup_complete = False
+
+        self._warm_start()
 
         # start socket thread (legacy first → auto-fallback handled in _ws_runner)
         threading.Thread(
@@ -144,6 +151,24 @@ class MarketData:
         threading.Thread(
             target=self._bar_worker, name="BarBuilder", daemon=True
         ).start()
+
+    def _warm_start(self) -> None:
+        import requests
+
+        url_fmt = "https://api.exchange.coinbase.com/products/{}/candles?granularity=60&limit=150"
+        for sym in self._symbols:
+            try:
+                r = requests.get(url_fmt.format(sym), timeout=5)
+                data = r.json()
+                for row in reversed(data):
+                    t, low, high, open_, close, *_ = row
+                    self._bars[sym].append((open_, high, low, close))
+                if data:
+                    self._prices[sym] = float(data[0][4])
+                    self._last_update = time.monotonic()
+            except Exception:
+                pass
+        self.warmup_complete = all(self._bars[s] for s in self._symbols)
 
     # ————— public API —————
     def wait_ready(self, timeout: int = 15) -> bool:

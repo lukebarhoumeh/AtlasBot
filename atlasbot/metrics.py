@@ -17,6 +17,7 @@ equity_g = Gauge('atlasbot_equity_usd', 'Total account equity')
 heartbeat_g = Gauge('bot_alive', 'Bot heartbeat')
 gpt_errors_total = Counter('gpt_errors_total', 'GPT desk errors')
 gpt_last_success_ts = Gauge('gpt_last_success_ts', 'GPT desk last success timestamp')
+warmup_complete_g = Gauge('atlasbot_warmup_complete', 'Initial bar warmup complete')
 
 
 def start_metrics_server(port: int = 9000) -> None:
@@ -36,6 +37,7 @@ def _update_loop() -> None:
         gross_pos_g.set(sum(gross(sym) for sym in md._symbols))
         cash_g.set(cash())
         equity_g.set(equity())
+        warmup_complete_g.set(1 if getattr(md, "warmup_complete", False) else 0)
         if time.time() - last_hb >= 60:
             heartbeat_g.set(1)
             last_hb = time.time()

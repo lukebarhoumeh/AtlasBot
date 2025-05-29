@@ -5,12 +5,15 @@ SYMBOLS = [
 ]
 
 # --- strategy parameters ----------------------------------------------------
-PROFIT_TARGETS = {
-    "BTC-USD": 0.0015, "ETH-USD": 0.0020, "DOGE-USD": 0.0060,
-    "AVAX-USD": 0.0050, "SUI-USD": 0.0050, "XLM-USD": 0.0040,
-    "HBAR-USD": 0.0035, "ADA-USD": 0.0025, "DOT-USD": 0.0040,
-    "LINK-USD": 0.0030, "SOL-USD": 0.0030,
-}
+SLIPPAGE_BPS = 4              # simulated slippage (basis points)
+EDGE_BPS = 3                  # desired edge after costs
+
+
+def profit_target(sym: str) -> float:
+    """Return cost-aware profit target for *sym* as a percentage."""
+    fee_bps = TAKER_FEE * 10_000
+    slip = SLIPPAGE_BPS
+    return (fee_bps + slip + EDGE_BPS) / 10_000
 MAX_NOTIONAL_USD = 100          # risk cap per position
 LOG_PATH = "data/logs/sim_tradesOverNight.csv"
 
@@ -21,7 +24,7 @@ W_MACRO = 0.2
 
 # --- risk limits ------------------------------------------------------------
 MAX_GROSS_USD = 1_000
-MAX_DAILY_LOSS = 100
+MAX_DAILY_LOSS = 250
 RISK_PER_TRADE = 0.002
 
 # --- execution --------------------------------------------------------------
@@ -44,7 +47,6 @@ FEE_MIN_USD = 0.10
 
 # execution costs
 TAKER_FEE = 0.0025            # Coinbase taker fee
-SLIPPAGE_BPS = 3              # simulated slippage (basis points)
 
 # starting capital
 START_CASH = 50_000.0
