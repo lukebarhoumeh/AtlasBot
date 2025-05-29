@@ -17,6 +17,15 @@ Mini research and trading framework for Coinbase markets.
                                     execution
 ```
 
+## Installation
+
+```bash
+pip install -r requirements.txt
+pip install -e .
+```
+
+Tests expect the package to be installed in editable mode.
+
 ## Usage
 
 Run the bot in simulation or paper mode:
@@ -25,6 +34,8 @@ Run the bot in simulation or paper mode:
 python -m cli.run_bot --backend sim   # default
 python -m cli.run_bot --backend paper
 ```
+
+Fees are refreshed hourly by a background updater started at launch.
 
 Metrics are exposed at http://localhost:9000/metrics. GPT desk summaries are
 written to `logs/ai_advisor.log` every 10 minutes when `OPENAI_API_KEY` is set.

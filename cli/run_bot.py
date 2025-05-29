@@ -1,17 +1,19 @@
 import argparse
-import time
-import signal
-import os
-import logging
-import json
 import atexit
+import json
+import logging
+import os
+import signal
+import time
+
 import openai
 
+from atlasbot import risk
+from atlasbot.config import start_fee_updater
+from atlasbot.metrics import start_metrics_server
+from atlasbot.risk import SUMMARY_PATH
 from atlasbot.secrets_loader import get_openai_api_key
 from atlasbot.trader import IntradayTrader
-from atlasbot.metrics import start_metrics_server
-from atlasbot import risk
-from atlasbot.risk import SUMMARY_PATH
 
 openai.api_key = get_openai_api_key()
 
@@ -23,6 +25,7 @@ parser.add_argument("--backend", default="sim", choices=["sim", "paper"])
 parser.add_argument("-t", "--time", type=int, default=0, help="run time seconds")
 args = parser.parse_args()
 
+start_fee_updater()
 start_metrics_server()
 bot = IntradayTrader(backend=args.backend)
 stop_event = False

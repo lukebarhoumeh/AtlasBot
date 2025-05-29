@@ -35,6 +35,10 @@ class RiskManager:
         self.stats: dict[str, dict] = {}
         self.open_fees: dict[str, float] = {}
         self._lock = threading.Lock()
+        self._ledger_idx = 0
+        self.maker_fills = 0
+        self.taker_fills = 0
+        threading.Thread(target=self._ledger_loop, daemon=True).start()
 
     def _update_inventory(self, symbol: str, qty: float, price: float) -> float:
         lots = self.lots.setdefault(symbol, [])
@@ -94,6 +98,7 @@ class RiskManager:
         price: float,
         fee: float,
         slip: float,
+        maker: bool = False,
     ) -> tuple[float, float]:
         with self._lock:
             qty = notional / price
@@ -131,8 +136,14 @@ class RiskManager:
                 "slip": slip,
                 "realised": pnl,
                 "mtm": mtm,
+                "maker": maker,
             }
             self.trades.append(trade)
+
+            if maker:
+                self.maker_fills += 1
+            else:
+                self.taker_fills += 1
 
             st = self.stats.setdefault(
                 symbol,
@@ -155,6 +166,23 @@ class RiskManager:
             with open(SUMMARY_PATH, "a") as f:
                 f.write(json.dumps(row) + "\n")
             self._last_snapshot = now
+
+    def _ledger_loop(self) -> None:
+        while True:
+            self._snapshot_ledger()
+            time.sleep(60)
+
+    def _snapshot_ledger(self) -> None:
+        path = Path(f"data/ledger_{datetime.now(timezone.utc):%Y-%m-%d}.jsonl")
+        path.parent.mkdir(exist_ok=True)
+        with self._lock:
+            new_trades = self.trades[self._ledger_idx :]
+            self._ledger_idx = len(self.trades)
+        if not new_trades:
+            return
+        with open(path, "a") as f:
+            for t in new_trades:
+                f.write(json.dumps(t) + "\n")
 
     def _summary_row(self, now: datetime) -> dict:
         total_realised = sum(self.realised.values())
@@ -223,9 +251,15 @@ def check_risk(order: dict) -> bool:
 
 
 def record_fill(
-    symbol: str, side: str, notional: float, price: float, fee: float, slip: float
+    symbol: str,
+    side: str,
+    notional: float,
+    price: float,
+    fee: float,
+    slip: float,
+    maker: bool = False,
 ) -> tuple[float, float]:
-    return _risk.record_fill(symbol, side, notional, price, fee, slip)
+    return _risk.record_fill(symbol, side, notional, price, fee, slip, maker)
 
 
 def gross(symbol: str) -> float:
@@ -234,6 +268,11 @@ def gross(symbol: str) -> float:
 
 def daily_pnl() -> float:
     return _risk.daily_pnl
+
+
+def maker_fill_ratio() -> float:
+    total = _risk.maker_fills + _risk.taker_fills
+    return _risk.maker_fills / total if total else 0.0
 
 
 def last_trades(seconds: int) -> list[dict]:

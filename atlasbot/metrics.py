@@ -6,7 +6,7 @@ from prometheus_client import CollectorRegistry, Counter, Gauge, start_http_serv
 
 from atlasbot.config import REST_TICKER_FMT
 from atlasbot.market_data import get_market
-from atlasbot.risk import cash, daily_pnl, equity, gross, total_mtm
+from atlasbot.risk import cash, daily_pnl, equity, gross, maker_fill_ratio, total_mtm
 from atlasbot.signals import poll_latency
 
 REGISTRY = CollectorRegistry()
@@ -37,6 +37,9 @@ gross_pos_g = Gauge(
 cash_g = Gauge("atlasbot_cash_usd", "Available cash", registry=REGISTRY)
 equity_g = Gauge("atlasbot_equity_usd", "Total account equity", registry=REGISTRY)
 heartbeat_g = Gauge("bot_alive", "Bot heartbeat", registry=REGISTRY)
+maker_ratio_g = Gauge(
+    "atlasbot_maker_fill_ratio", "Maker to total fill ratio", registry=REGISTRY
+)
 gpt_errors_total = Counter("gpt_errors_total", "GPT desk errors", registry=REGISTRY)
 gpt_last_success_ts = Gauge(
     "gpt_last_success_ts", "GPT desk last success timestamp", registry=REGISTRY
@@ -88,6 +91,7 @@ def _update_loop() -> None:
         gross_pos_g.set(sum(gross(sym) for sym in md._symbols))
         cash_g.set(cash())
         equity_g.set(equity())
+        maker_ratio_g.set(maker_fill_ratio())
         warmup_complete_g.set(1 if getattr(md, "warmup_complete", False) else 0)
         if time.time() - last_hb >= 60:
             heartbeat_g.set(1)

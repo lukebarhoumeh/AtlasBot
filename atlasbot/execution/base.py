@@ -14,11 +14,16 @@ FILL_DIR = "data/fills"
 
 
 def log_fill(
-    symbol: str, side: str, notional: float, price: float, slip: float = 0.0
+    symbol: str,
+    side: str,
+    notional: float,
+    price: float,
+    slip: float = 0.0,
+    maker: bool = False,
 ) -> None:
     """Print fill info and append to pnl.csv and jsonl fills."""
     fee = max(notional * TAKER_FEE, FEE_MIN_USD)
-    realised, mtm = risk.record_fill(symbol, side, notional, price, fee, slip)
+    realised, mtm = risk.record_fill(symbol, side, notional, price, fee, slip, maker)
     risk.check_circuit_breaker()
     ts = datetime.now(timezone.utc)
     print(
@@ -45,3 +50,10 @@ def log_fill(
     fpath = os.path.join(FILL_DIR, f"{ts.date()}.jsonl")
     with open(fpath, "a") as f:
         f.write(json.dumps(row) + "\n")
+
+
+def submit_maker_order(
+    side: str, size_usd: float, symbol: str
+) -> tuple[str, float, float] | None:
+    """Submit a maker (post-only) order. Return fill tuple or None."""
+    raise NotImplementedError

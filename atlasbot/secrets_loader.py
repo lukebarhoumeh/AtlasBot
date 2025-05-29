@@ -1,10 +1,10 @@
 # secrets_loader.py
-import boto3
 import base64
 import json
 import os
+
+import boto3
 from dotenv import load_dotenv
-from botocore.exceptions import ClientError
 
 load_dotenv()
 
@@ -25,6 +25,7 @@ def load_secret(secret_name: str, region_name: str = "us-east-1") -> dict:
     except Exception:
         return {}
 
+
 def get_coinbase_credentials():
     secret = load_secret("atlasbot/coinbase")
     if not secret:
@@ -37,6 +38,7 @@ def get_coinbase_credentials():
         "api_name": secret["COINBASE_API_NAME"],
         "private_key": formatted_key,
     }
+
 
 def get_openai_api_key():
     env_key = os.getenv("OPENAI_API_KEY")
