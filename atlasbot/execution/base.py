@@ -1,9 +1,11 @@
-import os
 import json
-import pandas as pd
+import os
 from datetime import datetime, timezone
-from atlasbot.config import TAKER_FEE, FEE_MIN_USD
+
+import pandas as pd
+
 from atlasbot import risk
+from atlasbot.config import FEE_MIN_USD, TAKER_FEE
 
 PNL_PATH = "data/logs/pnl.csv"
 
@@ -11,10 +13,13 @@ PNL_PATH = "data/logs/pnl.csv"
 FILL_DIR = "data/fills"
 
 
-def log_fill(symbol: str, side: str, notional: float, price: float, slip: float = 0.0) -> None:
+def log_fill(
+    symbol: str, side: str, notional: float, price: float, slip: float = 0.0
+) -> None:
     """Print fill info and append to pnl.csv and jsonl fills."""
     fee = max(notional * TAKER_FEE, FEE_MIN_USD)
     realised, mtm = risk.record_fill(symbol, side, notional, price, fee, slip)
+    risk.check_circuit_breaker()
     ts = datetime.now(timezone.utc)
     print(
         f"[FILLED] {ts:%H:%M:%SZ}  {symbol}  {side.upper()}  ${notional:.2f} @ {price:,.2f}  fee=${fee:.2f}"
@@ -40,5 +45,3 @@ def log_fill(symbol: str, side: str, notional: float, price: float, slip: float 
     fpath = os.path.join(FILL_DIR, f"{ts.date()}.jsonl")
     with open(fpath, "a") as f:
         f.write(json.dumps(row) + "\n")
-
-

@@ -1,31 +1,27 @@
-import time
 import asyncio
 import logging
-import os
+import math
 import threading
+import time
 from datetime import datetime, timezone
 from typing import Optional
-import math
 
 import pandas as pd
 
-from atlasbot.utils import fetch_price, calculate_atr, fetch_volatility
-from atlasbot.market_data import get_market
-from atlasbot.gpt_report import GPTTrendAnalyzer
+import atlasbot.config as cfg
+from atlasbot import risk
+from atlasbot.ai_desk import LOG_PATH as DESK_LOG_PATH
+from atlasbot.ai_desk import AIDesk
+from atlasbot.config import LOG_PATH as TRADE_LOG_PATH
+from atlasbot.config import profit_target
 from atlasbot.decision_engine import DecisionEngine
 from atlasbot.execution import get_backend
-from atlasbot.config import (
-    LOG_PATH as TRADE_LOG_PATH,
-    SYMBOLS,
-    profit_target,
-    MAX_NOTIONAL_USD,
-    EXECUTION_BACKEND,
-    DESK_SUMMARY_S,
-    RISK_PER_TRADE,
-)
-from atlasbot import risk
-from atlasbot.ai_desk import AIDesk, LOG_PATH as DESK_LOG_PATH
+from atlasbot.gpt_report import GPTTrendAnalyzer
+from atlasbot.market_data import get_market
 from atlasbot.secrets_loader import get_openai_api_key
+from atlasbot.utils import calculate_atr, fetch_price, fetch_volatility
+
+SYMBOLS = cfg.SYMBOLS
 
 
 class TradingBot:
@@ -38,13 +34,13 @@ class TradingBot:
     # ----------------------------------------------------------------- life-cycle
     def __init__(
         self,
-        symbols: list[str] = SYMBOLS,
+        symbols: list[str] = cfg.SYMBOLS,
         max_notional_usd: Optional[float] = None,
         gpt_trend_analyzer: Optional[GPTTrendAnalyzer] = None,
         log_file: str = TRADE_LOG_PATH,
     ):
         self.symbols = symbols
-        self.max_notional_usd = max_notional_usd or MAX_NOTIONAL_USD
+        self.max_notional_usd = max_notional_usd or cfg.MAX_NOTIONAL_USD
         self.gpt = gpt_trend_analyzer or GPTTrendAnalyzer(enabled=False)
         self.log_file = log_file
         self._skip_logged: set[str] = set()
@@ -61,7 +57,11 @@ class TradingBot:
             vol = fetch_volatility(symbol)
             if math.isnan(atr) or math.isnan(vol):
                 if symbol not in self._skip_logged:
-                    logging.debug("[SKIP] %s waiting for bars (have=%d)", symbol, len(get_market().minute_bars(symbol)))
+                    logging.debug(
+                        "[SKIP] %s waiting for bars (have=%d)",
+                        symbol,
+                        len(get_market().minute_bars(symbol)),
+                    )
                     self._skip_logged.add(symbol)
                 continue
             self._skip_logged.discard(symbol)
@@ -119,11 +119,15 @@ class TradingBot:
         timeout_s: int = 300,
     ) -> tuple[float, int]:
         """TP / SL / max-hold simulation loop."""
-        tp = entry_price * (1 + profit_target_pct) if side == "buy" else entry_price * (
-            1 - profit_target_pct
+        tp = (
+            entry_price * (1 + profit_target_pct)
+            if side == "buy"
+            else entry_price * (1 - profit_target_pct)
         )
-        sl_pt = entry_price * (1 - profit_target_pct) if side == "buy" else entry_price * (
-            1 + profit_target_pct
+        sl_pt = (
+            entry_price * (1 - profit_target_pct)
+            if side == "buy"
+            else entry_price * (1 + profit_target_pct)
         )
         sl_atr = entry_price - 2 * atr if side == "buy" else entry_price + 2 * atr
         sl = min(sl_pt, sl_atr) if side == "buy" else max(sl_pt, sl_atr)
@@ -132,8 +136,12 @@ class TradingBot:
         while True:
             cur_price = fetch_price(symbol)
 
-            hit_tp = side == "buy" and cur_price >= tp or side == "sell" and cur_price <= tp
-            hit_sl = side == "buy" and cur_price <= sl or side == "sell" and cur_price >= sl
+            hit_tp = (
+                side == "buy" and cur_price >= tp or side == "sell" and cur_price <= tp
+            )
+            hit_sl = (
+                side == "buy" and cur_price <= sl or side == "sell" and cur_price >= sl
+            )
             timed_out = time.time() - start >= timeout_s
 
             if hit_tp or hit_sl or timed_out:
@@ -163,36 +171,72 @@ class TradingBot:
 class IntradayTrader:
     """Alpha-driven trader with risk and PnL tracking."""
 
-    def __init__(self, decision_engine: DecisionEngine | None = None, backend: str = EXECUTION_BACKEND,
-                 pnl_file: str = "data/logs/pnl.csv"):
+    def __init__(
+        self,
+        decision_engine: DecisionEngine | None = None,
+        backend: str = cfg.EXECUTION_BACKEND,
+        pnl_file: str = "data/logs/pnl.csv",
+    ):
         self.engine = decision_engine or DecisionEngine()
+        self.backend_name = backend
         self.exec = get_backend(backend)
         self.pnl_file = pnl_file
         self._skip_logged: set[str] = set()
+        self._conflict_counts: dict[str, int] = {}
         try:
             asyncio.get_running_loop().create_task(desk_runner())
         except RuntimeError:
             loop = asyncio.new_event_loop()
-            threading.Thread(target=loop.run_until_complete, args=(desk_runner(),), daemon=True).start()
+            threading.Thread(
+                target=loop.run_until_complete, args=(desk_runner(),), daemon=True
+            ).start()
 
     # --------------------------------------------------------------- main loop
     def run_cycle(self) -> None:
         md = get_market()
-        for symbol in SYMBOLS:
+        if risk.check_circuit_breaker():
+            if self.backend_name != "sim":
+                logging.warning("Circuit breaker engaged – using sim backend")
+            self.exec = get_backend("sim")
+        else:
+            self.exec = get_backend(self.backend_name)
+        for symbol in cfg.SYMBOLS:
             advice = self.engine.next_advice(symbol)
+            if advice["bias"] == "flat":
+                continue
+            im = advice.get("rationale", {}).get("orderflow", 0.0)
+            mo = advice.get("rationale", {}).get("momentum", 0.0)
+            if im * mo < 0 and abs(im) > 0.2:
+                cnt = self._conflict_counts.get(symbol, 0) + 1
+                self._conflict_counts[symbol] = cnt
+                continue
+            else:
+                self._conflict_counts[symbol] = 0
+            edge_bps = abs(advice.get("edge", 0.0) * 10_000)
+            if edge_bps <= cfg.FEE_BPS + cfg.SLIPPAGE_BPS + cfg.MIN_EDGE_BPS:
+                continue
             side = "buy" if advice["bias"] == "long" else "sell"
             price = fetch_price(symbol)
             atr = calculate_atr(symbol)
             if math.isnan(atr):
                 if symbol not in self._skip_logged:
-                    logging.debug("[SKIP] %s waiting for bars (have=%d)", symbol, len(md.minute_bars(symbol)))
+                    logging.debug(
+                        "[SKIP] %s waiting for bars (have=%d)",
+                        symbol,
+                        len(md.minute_bars(symbol)),
+                    )
                     self._skip_logged.add(symbol)
                 continue
             self._skip_logged.discard(symbol)
             equity = risk.equity()
             conf = max(advice.get("confidence", 0.0), 0.0)
-            size_usd = equity * RISK_PER_TRADE * conf / (atr / price if atr else 1)
-            order = {"symbol": symbol, "side": side, "size_usd": size_usd, "take_profit": price * (1 + advice.get("edge", 0.0))}
+            size_usd = equity * cfg.RISK_PER_TRADE * conf / (atr / price if atr else 1)
+            order = {
+                "symbol": symbol,
+                "side": side,
+                "size_usd": size_usd,
+                "take_profit": price * (1 + advice.get("edge", 0.0)),
+            }
             if not risk.check_risk(order):
                 continue
             self.exec.submit_order(side, size_usd, symbol)
@@ -221,4 +265,3 @@ async def desk_runner():
                 f.write(summ.get("summary", "") + "\n")
         except Exception as exc:  # noqa: BLE001
             logging.error("desk_runner: %s", exc)
-
