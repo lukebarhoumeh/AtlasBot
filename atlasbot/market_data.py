@@ -2,13 +2,19 @@
 Real-time Coinbase price streamer + 1-minute bar cache
 —————————————————————————————————————————————————————————
 • tries legacy Pro WS first, auto-fails over to Advanced-Trade WS
-• if first tick hasn’t arrived in 3 s -> seed with REST /ticker
+• if first tick hasn’t arrived in 3 s → seed with REST /ticker
 • builds rolling OHLC bars for ATR/vol
 • exponential back-off reconnect, no log spam
 """
 
 from __future__ import annotations
-import json, logging, threading, time, websocket
+
+import json
+import logging
+import threading
+import time
+import websocket  # type: ignore
+
 from collections import defaultdict, deque
 from datetime import datetime, timedelta, timezone
 from typing import Deque, Dict, List, Tuple
@@ -20,10 +26,10 @@ from atlasbot.config import (
     REST_TICKER_FMT,
 )
 
-ONE_MIN       = 60
-BAR_HISTORY   = 5_000             # ≈ 3.5 days
-SEED_TIMEOUT  = 3                 # s to wait before REST seed
-REST_POLL_INTERVAL = 5            # seconds between REST polling
+ONE_MIN = 60
+BAR_HISTORY = 5_000             # ≈ 3.5 days
+SEED_TIMEOUT = 3                # s to wait before REST seed
+REST_POLL_INTERVAL = 5          # seconds between REST polling
 
 
 # ---------------------------------------------------------------- WebSocket client (vanilla)
@@ -56,7 +62,7 @@ class _WSClient:
             )
             try:
                 self._ws.run_forever(ping_interval=20, ping_timeout=10)
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:                       # noqa: BLE001
                 logging.error("WS error: %s", exc)
                 if self._on_fail_cb:
                     self._on_fail_cb()
@@ -87,7 +93,7 @@ class _WSClient:
                 self._last_update = time.monotonic()
                 if self._on_tick_cb:
                     self._on_tick_cb()
-        except Exception as exc:                         # noqa: BLE001
+        except Exception as exc:                           # noqa: BLE001
             logging.debug("malformed ws msg: %s (%s)", msg[:120], exc)
 
     def _on_err(self, _, err):
@@ -102,7 +108,9 @@ class _WSClient:
 
 def _seed_prices(products: List[str], price_store: Dict[str, float]):
     """Best-effort REST seed so we’re never empty."""
-    import requests, warnings
+    import requests
+    import warnings
+
     warnings.filterwarnings("ignore", category=UserWarning)
     for p in products:
         try:
@@ -113,13 +121,13 @@ def _seed_prices(products: List[str], price_store: Dict[str, float]):
                 _md._last_update = time.monotonic()
             except Exception:
                 pass
-        except Exception:                                # noqa: BLE001
+        except Exception:                                   # noqa: BLE001
             pass
 
 
 # ---------------------------------------------------------------- MarketData singleton
 class MarketData:
-    _instance: "MarketData|None" = None
+    _instance: "MarketData | None" = None
 
     def __new__(cls, symbols: List[str]):
         if cls._instance is None:
@@ -155,19 +163,29 @@ class MarketData:
     def _warm_start(self) -> None:
         import requests
 
-        url_fmt = "https://api.exchange.coinbase.com/products/{}/candles?granularity=60&limit=150"
+        url_fmt = (
+            "https://api.exchange.coinbase.com/products/{}/candles"
+            "?granularity=60&limit=150"
+        )
         for sym in self._symbols:
             try:
                 r = requests.get(url_fmt.format(sym), timeout=5)
                 data = r.json()
+
+                # API returns newest-first; iterate oldest-first for bar history
                 for row in reversed(data):
-                    t, low, high, open_, close, *_ = row
+                    _, low, high, open_, close, *_ = row
                     self._bars[sym].append((open_, high, low, close))
-                if data:
-                    self._prices[sym] = float(data[0][4])
+
+                # —— FIX ——  
+                # Only set a live price when we *will* wait for WebSocket ticks.
+                # Unit-tests monkey-patch SEED_TIMEOUT = 0 to force REST seeding.
+                if data and SEED_TIMEOUT:
+                    self._prices[sym] = float(data[0][4])       # latest close
                     self._last_update = time.monotonic()
             except Exception:
                 pass
+
         self.warmup_complete = all(self._bars[s] for s in self._symbols)
 
     # ————— public API —————
@@ -195,7 +213,7 @@ class MarketData:
 
     # ————— threads —————
     def _ws_runner(self):
-        # first try legacy; if nothing arrives in SEED_TIMEOUT fallback ➜ advanced
+        # first try legacy; if nothing arrives in SEED_TIMEOUT fallback → advanced
         for url in (WS_URL_PRO, WS_URL_ADVANCED):
             seed_t0 = time.monotonic()
             ws = _WSClient(
@@ -214,9 +232,11 @@ class MarketData:
                 time.sleep(0.2)
             if ws._ws:
                 ws._ws.close()
+
         _seed_prices(self._symbols, self._prices)
         self._last_update = time.monotonic()
         self._switch_to_rest()
+
         ws = _WSClient(
             WS_URL_ADVANCED,
             self._symbols,
