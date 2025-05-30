@@ -48,6 +48,7 @@ RISK_PER_TRADE = 0.002
 
 # --- execution --------------------------------------------------------------
 EXECUTION_BACKEND = "sim"  # "paper" | "live" (future)
+EXECUTION_MODE = os.getenv("EXECUTION_MODE", "maker")  # maker | taker
 
 # --- data feed URLs ---------------------------------------------------------
 WS_URL_PRO = "wss://ws-feed.exchange.coinbase.com"  # legacy
@@ -61,6 +62,8 @@ OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 LOG_HEARTBEAT_S = 60
 DESK_SUMMARY_S = 600
 FEE_MIN_USD = FEE_FLAT
+# console summary interval
+SUMMARY_INTERVAL_MIN = int(os.getenv("SUMMARY_INTERVAL_MIN", "10"))
 
 # configurable max hold time for live and simulated trades (minutes)
 MAX_HOLD_MIN = int(os.getenv("MAX_HOLD_MIN", "30"))

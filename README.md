@@ -51,7 +51,7 @@ New gauges track edge quality and trade cadence.
 * COINBASE_PAPER_KEY  – optional, send orders to Coinbase paper
 * LOG_LEVEL           – DEBUG|INFO|WARN|ERROR (default INFO)
 * OPENAI_MODEL        – override model for macro signal (default gpt-4o-mini)
-* EXECUTION_MODE      – sim | paper (default sim)
+* EXECUTION_MODE      – maker | taker (default maker)
 * MIN_EDGE_BPS        – minimum edge threshold
 * CONFLICT_THRESH     – orderflow/momentum disagreement cutoff
 * MACRO_TTL_MIN       – minutes to cache GPT macro bias
