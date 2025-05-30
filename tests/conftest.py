@@ -1,4 +1,3 @@
-import importlib
 import os
 import sys
 import types
@@ -7,106 +6,66 @@ from pathlib import Path
 import pkg_resources
 import pytest
 
-for name in (
-    "openai",
-    "websocket",
-    "requests",
-    "dotenv",
-    "boto3",
-    "pandas",
-    "numpy",
-    "prometheus_client",
-):
+for name in ("dotenv", "boto3", "openai", "requests", "websocket"):
     if name not in sys.modules:
-        sys.modules[name] = importlib.import_module("types").SimpleNamespace()
+        sys.modules[name] = types.ModuleType(name)
 if not hasattr(sys.modules["dotenv"], "load_dotenv"):
     sys.modules["dotenv"].load_dotenv = lambda *a, **k: None
-if not hasattr(sys.modules["openai"], "ChatCompletion"):
-    sys.modules["openai"].ChatCompletion = types.SimpleNamespace()
-
-
-def _dummy_create(*a, **k):
-    return types.SimpleNamespace(
-        choices=[types.SimpleNamespace(message=types.SimpleNamespace(content="{}"))]
-    )
-
-
-sys.modules["openai"].ChatCompletion.create = _dummy_create
-if not hasattr(sys.modules["openai"], "OpenAI"):
-    sys.modules["openai"].OpenAI = lambda *a, **k: types.SimpleNamespace(
-        chat=types.SimpleNamespace(
-            completions=types.SimpleNamespace(create=_dummy_create)
-        )
-    )
 if not hasattr(sys.modules["boto3"], "session"):
     sys.modules["boto3"].session = types.SimpleNamespace(
         Session=lambda *a, **k: types.SimpleNamespace(
-            client=lambda *a, **k: types.SimpleNamespace(
+            client=lambda *_a, **_k: types.SimpleNamespace(
                 get_secret_value=lambda SecretId: {}
             )
         )
     )
-if not hasattr(sys.modules["pandas"], "DataFrame"):
-
-    class _DF:
-        def __init__(self, rows):
-            self.rows = rows
-
-        def to_csv(self, path, mode="w", header=True, index=False):
-            import csv
-
-            exists = "a" in mode and os.path.exists(path)
-            with open(path, mode, newline="") as f:
-                writer = csv.DictWriter(f, fieldnames=self.rows[0].keys())
-                if header and not exists:
-                    writer.writeheader()
-                for r in self.rows:
-                    writer.writerow(r)
-
-    sys.modules["pandas"].DataFrame = _DF
-if not hasattr(sys.modules["numpy"], "corrcoef"):
-
-    def _corrcoef(a, b):
-        import math
-
-        if len(a) != len(b):
-            raise ValueError
-        mean_a = sum(a) / len(a)
-        mean_b = sum(b) / len(b)
-        cov = sum((x - mean_a) * (y - mean_b) for x, y in zip(a, b)) / len(a)
-        var_a = sum((x - mean_a) ** 2 for x in a) / len(a)
-        var_b = sum((y - mean_b) ** 2 for y in b) / len(b)
-        if var_a == 0 or var_b == 0:
-            return [[1.0, 0.0], [0.0, 1.0]]
-        corr = cov / math.sqrt(var_a * var_b)
-        return [[1.0, corr], [corr, 1.0]]
-
-    sys.modules["numpy"].corrcoef = _corrcoef
-if not hasattr(sys.modules["prometheus_client"], "Gauge"):
-    ns = types.SimpleNamespace
-    sys.modules["prometheus_client"].Gauge = lambda *a, **k: ns(
-        inc=lambda *a, **k: None, set=lambda *a, **k: None
-    )
-    sys.modules["prometheus_client"].Counter = lambda *a, **k: ns(
-        inc=lambda *a, **k: None
-    )
-    sys.modules["prometheus_client"].CollectorRegistry = object
-    sys.modules["prometheus_client"].Histogram = lambda *a, **k: ns(
-        observe=lambda *a, **k: None
-    )
-    sys.modules["prometheus_client"].start_http_server = lambda *a, **k: None
-
-ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+openai_stub = sys.modules["openai"]
+error_mod = types.ModuleType("openai.error")
 
 
-for pkg in ("pandas", "requests", "ccxt"):
-    if not pkg_resources.working_set.by_key.get(pkg):
-        dist = pkg_resources.Distribution(project_name=pkg, version="0.0")
-        pkg_resources.working_set.add(dist)
+class _Dummy(Exception):
+    pass
 
-os.environ.setdefault("ATLAS_TEST", "1")
+
+class RateLimitError(_Dummy):
+    pass
+
+
+class APIError(_Dummy):
+    pass
+
+
+error_mod.RateLimitError = RateLimitError
+error_mod.APIError = APIError
+openai_stub.error = error_mod
+openai_stub.RateLimitError = RateLimitError
+openai_stub.APIError = APIError
+openai_stub.OpenAI = lambda *a, **k: types.SimpleNamespace(
+    api_key=k.get("api_key", ""),
+    chat=types.SimpleNamespace(
+        completions=types.SimpleNamespace(
+            create=lambda *_a, **_k: types.SimpleNamespace(
+                choices=[
+                    types.SimpleNamespace(message=types.SimpleNamespace(content="{}"))
+                ]
+            )
+        )
+    ),
+)
+
+req_stub = sys.modules["requests"]
+req_stub.post = lambda *_a, **_k: types.SimpleNamespace(
+    status_code=200, json=lambda: {}
+)
+req_stub.get = lambda *_a, **_k: types.SimpleNamespace(ok=True, json=lambda: {})
+
+ws_stub = sys.modules["websocket"]
+ws_stub.WebSocketApp = lambda *a, **k: types.SimpleNamespace(
+    send=lambda *_a, **_k: None,
+    run_forever=lambda *_a, **_k: None,
+    close=lambda *_a, **_k: None,
+)
+ws_stub._exceptions = types.SimpleNamespace(WebSocketBadStatusException=Exception)
 
 
 class DummyMarket:
@@ -135,36 +94,13 @@ def patch_market(monkeypatch):
     yield
 
 
-@pytest.fixture(autouse=True)
-def stub_net_calls(monkeypatch):
-    monkeypatch.setattr(
-        "requests.post",
-        lambda *a, **k: types.SimpleNamespace(status_code=200, json=lambda: {}),
-        raising=False,
-    )
-    for mod in ("openai", "websocket"):
-        if mod not in sys.modules:
-            sys.modules[mod] = importlib.import_module("types").SimpleNamespace()
-    import openai
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
-    monkeypatch.setattr(
-        openai.ChatCompletion,
-        "create",
-        lambda *a, **k: types.SimpleNamespace(
-            choices=[types.SimpleNamespace(message=types.SimpleNamespace(content="{}"))]
-        ),
-        raising=False,
-    )
-    import websocket
+for pkg in ("pandas", "requests", "ccxt"):
+    if not pkg_resources.working_set.by_key.get(pkg):
+        dist = pkg_resources.Distribution(project_name=pkg, version="0.0")
+        pkg_resources.working_set.add(dist)
 
-    monkeypatch.setattr(
-        websocket,
-        "WebSocketApp",
-        lambda *a, **k: types.SimpleNamespace(
-            send=lambda *a, **k: None,
-            run_forever=lambda *a, **k: None,
-            close=lambda *a, **k: None,
-        ),
-        raising=False,
-    )
-    yield
+os.environ.setdefault("ATLAS_TEST", "1")
