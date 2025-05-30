@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 import pandas as pd
 
-from atlasbot import risk
+from atlasbot import risk, run_logger
 from atlasbot.config import FEE_MIN_USD, TAKER_FEE
 
 PNL_PATH = "data/logs/pnl.csv"
@@ -44,6 +44,7 @@ def log_fill(
     pd.DataFrame([row]).to_csv(
         PNL_PATH, mode="a", header=not os.path.exists(PNL_PATH), index=False
     )
+    run_logger.append(row)
 
     # persist raw fill
     os.makedirs(FILL_DIR, exist_ok=True)

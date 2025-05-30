@@ -248,13 +248,16 @@ class IntradayTrader:
             if not risk.check_risk(order):
                 continue
             filled = None
-            for _ in range(3):
-                if hasattr(self.exec, "submit_maker_order"):
-                    filled = self.exec.submit_maker_order(side, size_usd, symbol)
-                if filled:
-                    break
-                time.sleep(1)
-            if not filled:
+            if cfg.EXECUTION_MODE == "maker":
+                for _ in range(3):
+                    if hasattr(self.exec, "submit_maker_order"):
+                        filled = self.exec.submit_maker_order(side, size_usd, symbol)
+                    if filled:
+                        break
+                    time.sleep(1)
+                if not filled:
+                    self.exec.submit_order(side, size_usd, symbol)
+            else:
                 self.exec.submit_order(side, size_usd, symbol)
             risk.annotate_last_trade(signals=advice["rationale"], ret=0.0)
             mbias = advice.get("rationale", {}).get("macro", 0.0)

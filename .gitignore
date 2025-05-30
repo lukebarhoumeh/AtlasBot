@@ -8,9 +8,10 @@ venv/
 
 # Data
 data/logs/*.csv
+logs/
+data/fills/
+data/runs/
 
 # Secrets / keys
 *.pem
 .env
--e "\n# runtime artefacts\nlogs/\ndata/fills/" 
-data/fills/ 
