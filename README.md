@@ -36,6 +36,8 @@ python -m cli.run_bot --backend paper
 ```
 
 Fees are refreshed hourly by a background updater started at launch.
+Strong signals have their profit target scaled so the expected edge exceeds
+fees and slippage.
 
 Metrics are exposed at http://localhost:9000/metrics. GPT desk summaries are
 written to `logs/ai_advisor.log` every 10 minutes when `OPENAI_API_KEY` is set.

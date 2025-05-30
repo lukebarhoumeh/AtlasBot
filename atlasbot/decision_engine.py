@@ -2,13 +2,16 @@ import json
 import os
 import time
 from pathlib import Path
+
 import numpy as np
-from atlasbot.signals import imbalance, momentum, macro_bias
-from atlasbot.config import W_ORDERFLOW, W_MOMENTUM, W_MACRO, profit_target
+
 from atlasbot import risk
+from atlasbot.config import W_MACRO, W_MOMENTUM, W_ORDERFLOW, profit_target
+from atlasbot.signals import imbalance, macro_bias, momentum
 
 ADAPT_TEMP = float(os.getenv("ADAPT_TEMP", "2.0"))
 WEIGHTS_FILE = Path("data/weights.json")
+
 
 class DecisionEngine:
     """Combine multiple signals into a trading bias with adaptive weights."""
@@ -23,6 +26,7 @@ class DecisionEngine:
 
     # --------------------------------------------------------------- public API
     def next_advice(self, symbol: str) -> dict:
+        """Return trading advice for *symbol* with scaled edge."""
         if time.time() - self._last_adapt >= 3600:
             self._adapt_weights()
         im = imbalance(symbol)
@@ -34,7 +38,8 @@ class DecisionEngine:
             + self.weights["macro"] * ma
         )
         bias = "long" if score > 0 else "short" if score < 0 else "flat"
-        raw_edge = profit_target(symbol) * (score / 1.0)
+        # scale edge so strong signals clear execution costs
+        raw_edge = profit_target(symbol) * score * 2
         return {
             "bias": bias,
             "confidence": abs(score),

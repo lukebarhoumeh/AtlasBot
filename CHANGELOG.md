@@ -10,3 +10,4 @@
 - Ledger snapshots written every minute
 - Maker fill ratio metric exposed
 - Configurable max hold time via MAX_HOLD_MIN
+- Decision engine scales edge by signal strength
