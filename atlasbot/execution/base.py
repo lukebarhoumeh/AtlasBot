@@ -37,7 +37,8 @@ def log_fill(
     risk.check_circuit_breaker()
     ts = datetime.now(timezone.utc)
     print(
-        f"[FILLED] {ts:%H:%M:%SZ}  {symbol}  {side.upper()}  ${notional:.2f} @ {price:,.2f}  fee=${fee:.2f}"
+        f"[FILLED] {ts:%H:%M:%SZ}  {symbol}  {side.upper()}  ${notional:.2f} @ "
+        f"{price:,.2f}  fee=${fee:.2f}"
     )
     row = {
         "timestamp": ts.isoformat(),

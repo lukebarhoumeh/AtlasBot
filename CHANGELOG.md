@@ -8,6 +8,7 @@
 - Heartbeat watchdog and ledger gzip
 - Tunable edge threshold and conflict filter
 - Breakout signal with adaptive trade-count curb
+- Removed vendored dependency stubs; use real wheels
 - Maker vs taker tracking and conflict debounce
 - Circuit breaker and feed watchdog safeguards
 - Thread-safe ledger with stress test

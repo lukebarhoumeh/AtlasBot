@@ -2,13 +2,14 @@ import asyncio
 import json
 import logging
 import os
-from pathlib import Path
-import openai
 import time
+from pathlib import Path
+
+import openai
 from openai import OpenAI
 
-from atlasbot.secrets_loader import get_openai_api_key
 from atlasbot import metrics
+from atlasbot.secrets_loader import get_openai_api_key
 
 client = OpenAI(api_key=get_openai_api_key())
 
@@ -57,5 +58,3 @@ class AIDesk:
             prompt,
             model="gpt-4o",
         )
-
-
