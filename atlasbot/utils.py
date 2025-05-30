@@ -14,8 +14,14 @@ from typing import List
 from atlasbot.config import SYMBOLS
 from atlasbot.market_data import get_market
 
-# single global market-data object
-_md = get_market(SYMBOLS)
+_md = None
+
+
+def _get_md():
+    global _md
+    if _md is None:
+        _md = get_market(SYMBOLS)
+    return _md
 
 
 # --------------------------------------------------------------------------- helpers
@@ -26,7 +32,8 @@ def _ensure_ready(timeout: int = 30) -> None:
     A longer default (30 s) avoids the “still not ready after 15 s” error loop
     you were seeing on slower or firewalled networks.
     """
-    if not _md.wait_ready(timeout):
+    md = _get_md()
+    if not md.wait_ready(timeout):
         msg = f"Market feed still not ready after {timeout}s"
         if timeout > 15:
             msg += f" (mode={_md.mode})"
@@ -37,7 +44,7 @@ def _ensure_ready(timeout: int = 30) -> None:
 def fetch_price(symbol: str) -> float:
     """Return the latest trade price for *symbol* (blocks until ready)."""
     _ensure_ready()
-    return _md.latest_trade(symbol)
+    return _get_md().latest_trade(symbol)
 
 
 def calculate_atr(symbol: str, period: int = 10) -> float:
@@ -46,7 +53,7 @@ def calculate_atr(symbol: str, period: int = 10) -> float:
     Raises if insufficient history is available.
     """
     _ensure_ready()
-    bars = list(_md.minute_bars(symbol))[-period - 1 :]
+    bars = list(_get_md().minute_bars(symbol))[-period - 1 :]
     if len(bars) < period + 1:
         return float("nan")
     trs = [
@@ -62,7 +69,7 @@ def fetch_volatility(symbol: str, period: int = 30) -> float:
     A quick-and-dirty proxy for intraday volatility.
     """
     _ensure_ready()
-    closes: List[float] = [b[3] for b in list(_md.minute_bars(symbol))[-period:]]
+    closes: List[float] = [b[3] for b in list(_get_md().minute_bars(symbol))[-period:]]
     if len(closes) < period:
         return float("nan")
 

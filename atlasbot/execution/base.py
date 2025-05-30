@@ -1,5 +1,6 @@
 import json
 import os
+from dataclasses import dataclass
 from datetime import datetime, timezone
 
 import pandas as pd
@@ -11,6 +12,15 @@ PNL_PATH = "data/logs/pnl.csv"
 
 
 FILL_DIR = "data/fills"
+
+
+@dataclass
+class Fill:
+    """Order fill information."""
+
+    order_id: str
+    qty: float
+    price: float
 
 
 def log_fill(
@@ -53,8 +63,6 @@ def log_fill(
         f.write(json.dumps(row) + "\n")
 
 
-def submit_maker_order(
-    side: str, size_usd: float, symbol: str
-) -> tuple[str, float, float] | None:
-    """Submit a maker (post-only) order. Return fill tuple or None."""
+def submit_maker_order(side: str, size_usd: float, symbol: str) -> Fill | None:
+    """Submit a maker (post-only) order. Return fill details or None."""
     raise NotImplementedError

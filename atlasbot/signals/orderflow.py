@@ -1,20 +1,27 @@
+import os
 import threading
 import time
-import requests
 from typing import Dict
+
+import requests
 
 from atlasbot.config import SYMBOLS
 
+RUN_THREAD = os.getenv("ATLAS_TEST") != "1"
+
 BOOK_URL = "https://api.exchange.coinbase.com/products/{}/book?level=2"
+
 
 class OrderFlow:
     """Simple order book imbalance tracker using REST polling."""
+
     def __init__(self, symbols=SYMBOLS, poll_interval: int = 2):
         self.symbols = symbols
         self.poll_interval = poll_interval
         self._imbalance: Dict[str, float] = {s: 0.0 for s in symbols}
         self._last_poll = time.monotonic()
-        threading.Thread(target=self._worker, daemon=True).start()
+        if RUN_THREAD:
+            threading.Thread(target=self._worker, daemon=True).start()
 
     # ------------------------------------------------------------------ metrics
     @property
@@ -41,11 +48,14 @@ class OrderFlow:
             self._last_poll = time.monotonic()
             time.sleep(max(0, self.poll_interval - (self._last_poll - t0)))
 
+
 # single global instance
 _orderflow = OrderFlow()
 
+
 def imbalance(symbol: str) -> float:
     return _orderflow.imbalance(symbol)
+
 
 def poll_latency() -> float:
     return _orderflow.last_poll_latency

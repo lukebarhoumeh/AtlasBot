@@ -256,14 +256,39 @@ class IntradayTrader:
                         break
                     time.sleep(1)
                 if not filled:
-                    self.exec.submit_order(side, size_usd, symbol)
+                    filled = self.exec.submit_order(side, size_usd, symbol)
             else:
-                self.exec.submit_order(side, size_usd, symbol)
+                filled = self.exec.submit_order(side, size_usd, symbol)
+            if filled:
+                self._exit_position(symbol, side, filled.qty, filled.price, atr)
             risk.annotate_last_trade(signals=advice["rationale"], ret=0.0)
             mbias = advice.get("rationale", {}).get("macro", 0.0)
             hit = (side == "buy" and mbias > 0) or (side == "sell" and mbias < 0)
             risk.record_macro_hit(hit)
             metrics.trade_count_day_g.set(risk.trade_count_day())
+
+    # ---------------------------------------------------------------- exit logic
+    def _exit_position(
+        self, symbol: str, side: str, qty: float, entry: float, atr: float
+    ) -> None:
+        """Close position via ATR-based TP/SL or timeout."""
+        tp = entry + cfg.K_TP * atr if side == "buy" else entry - cfg.K_TP * atr
+        sl = entry - cfg.K_SL * atr if side == "buy" else entry + cfg.K_SL * atr
+        end = time.time() + cfg.MAX_HOLD_MIN * 60
+        exit_side = "sell" if side == "buy" else "buy"
+        while True:
+            px = fetch_price(symbol)
+            if (side == "buy" and px >= tp) or (side == "sell" and px <= tp):
+                metrics.exit_tp_total.inc()
+                break
+            if (side == "buy" and px <= sl) or (side == "sell" and px >= sl):
+                metrics.exit_sl_total.inc()
+                break
+            if time.time() >= end:
+                metrics.exit_timeout_total.inc()
+                break
+            time.sleep(1)
+        self.exec.submit_order(exit_side, qty * px, symbol)
 
 
 async def desk_runner():

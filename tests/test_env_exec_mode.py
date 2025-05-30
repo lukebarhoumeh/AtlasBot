@@ -3,6 +3,7 @@ import importlib
 import atlasbot.config as cfg_mod
 import atlasbot.trader as tr_mod
 from atlasbot.decision_engine import DecisionEngine
+from atlasbot.execution.base import Fill
 
 
 class DummyExec:
@@ -12,11 +13,11 @@ class DummyExec:
 
     def submit_maker_order(self, side: str, size_usd: float, symbol: str):
         self.maker += 1
-        return "id", 1.0, 100.0
+        return Fill("id", 1.0, 100.0)
 
     def submit_order(self, side: str, size_usd: float, symbol: str):
         self.taker += 1
-        return "id", 1.0, 100.0
+        return Fill("id", 1.0, 100.0)
 
 
 class DummyMarket:
@@ -35,6 +36,7 @@ def _run_bot(monkeypatch, mode: str) -> DummyExec:
     monkeypatch.setattr(tr.risk, "check_risk", lambda order: True)
     dummy = DummyExec()
     monkeypatch.setattr(tr, "get_backend", lambda name=None: dummy)
+    monkeypatch.setattr(tr.IntradayTrader, "_exit_position", lambda *a, **k: None)
     dummy_market = DummyMarket()
     monkeypatch.setattr(tr, "get_market", lambda: dummy_market)
     import atlasbot.market_data as md

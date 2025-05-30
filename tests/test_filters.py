@@ -1,5 +1,8 @@
+from types import SimpleNamespace
+
 import atlasbot.config as cfg
 import atlasbot.trader as tr
+from atlasbot.execution.base import Fill
 
 
 class DummyExec:
@@ -8,6 +11,7 @@ class DummyExec:
 
     def submit_order(self, side: str, size_usd: float, symbol: str):
         self.calls.append((side, size_usd, symbol))
+        return Fill("id", size_usd / 100.0, 100.0)
 
 
 class DummyEngine:
@@ -24,6 +28,12 @@ def _setup_bot(monkeypatch, advice):
     monkeypatch.setattr(tr, "fetch_price", lambda s: 100.0)
     monkeypatch.setattr(tr, "calculate_atr", lambda s: 1.0)
     monkeypatch.setattr(tr.risk, "check_risk", lambda order: True)
+    monkeypatch.setattr(tr.IntradayTrader, "_exit_position", lambda *a, **k: None)
+    dummy_market = SimpleNamespace(
+        minute_bars=lambda s: [(1, 1, 1, 1)] * 60,
+        wait_ready=lambda t=0: True,
+    )
+    monkeypatch.setattr(tr, "get_market", lambda: dummy_market)
     dummy = DummyExec()
     monkeypatch.setattr(tr, "get_backend", lambda name=None: dummy)
     bot = tr.IntradayTrader(decision_engine=DummyEngine(advice), backend="sim")

@@ -73,6 +73,16 @@ feed_watchdog_total = Counter(
     registry=REGISTRY,
 )
 
+exit_tp_total = Counter(
+    "atlasbot_exit_tp_total", "Take-profit exits", registry=REGISTRY
+)
+exit_sl_total = Counter("atlasbot_exit_sl_total", "Stop-loss exits", registry=REGISTRY)
+exit_timeout_total = Counter(
+    "atlasbot_exit_timeout_total", "Timeout exits", registry=REGISTRY
+)
+
+_hb_last = time.time()
+
 
 def start_metrics_server(port: int = 9000) -> None:
     start_http_server(port, registry=REGISTRY)
@@ -98,11 +108,17 @@ def feed_watchdog_check() -> None:
         _refresh_prices(md._symbols)
 
 
+def heartbeat_watchdog(timeout: int = 120) -> None:
+    if time.time() - _hb_last > timeout:
+        heartbeat_g.set(0)
+
+
 def _update_loop() -> None:
     md = get_market()
     last_hb = 0.0
     while True:
         feed_watchdog_check()
+        heartbeat_watchdog()
         ws_latency_g.set(md.feed_latency() * 1000)
         rest_latency_g.set(poll_latency() * 1000)
         reconnects_g.set(md.reconnects)
@@ -117,5 +133,7 @@ def _update_loop() -> None:
         warmup_complete_g.set(1 if getattr(md, "warmup_complete", False) else 0)
         if time.time() - last_hb >= 60:
             heartbeat_g.set(1)
+            global _hb_last
+            _hb_last = time.time()
             last_hb = time.time()
         time.sleep(5)

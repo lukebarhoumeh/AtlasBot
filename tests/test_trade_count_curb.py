@@ -6,7 +6,7 @@ from atlasbot.execution.base import Fill
 
 
 class DummyExec:
-    def __init__(self):
+    def __init__(self) -> None:
         self.calls = []
 
     def submit_order(self, side: str, size_usd: float, symbol: str):
@@ -18,7 +18,7 @@ class DummyEngine:
     def __init__(self, advice):
         self._advice = advice
 
-    def next_advice(self, _symbol: str):
+    def next_advice(self, _):
         return self._advice
 
 
@@ -40,44 +40,17 @@ def _setup(monkeypatch, advice):
     return bot, dummy
 
 
-def test_edge_threshold_env(monkeypatch):
-    monkeypatch.setattr(cfg, "MIN_EDGE_BPS", 80, raising=False)
-    advice = {
-        "bias": "long",
-        "edge": 0.002,
-        "confidence": 1.0,
-        "rationale": {"orderflow": 0.5, "momentum": 0.5, "macro": 0.0},
-    }
-    bot, dummy = _setup(monkeypatch, advice)
-    bot.run_cycle()
-    assert not dummy.calls
-
-
-def test_conflict_thresh_env(monkeypatch):
-    monkeypatch.setattr(cfg, "CONFLICT_THRESH", 0.6, raising=False)
+def test_trade_curb_disabled(monkeypatch):
     advice = {
         "bias": "long",
         "edge": 0.05,
         "confidence": 1.0,
-        "rationale": {"orderflow": -0.5, "momentum": 0.5, "macro": 0.0},
-    }
-    bot, dummy = _setup(monkeypatch, advice)
-    bot.run_cycle()
-    assert dummy.calls
-
-
-def test_dynamic_size_curb(monkeypatch):
-    advice = {
-        "bias": "long",
-        "edge": 0.05,
-        "confidence": 1.0,
-        "rationale": {"orderflow": 0.2, "momentum": 0.3, "macro": 0.0},
+        "rationale": {"orderflow": 0.1, "momentum": 0.2, "macro": 0.0},
     }
     bot, dummy = _setup(monkeypatch, advice)
     monkeypatch.setattr(tr.risk, "equity", lambda: 1000.0)
-    monkeypatch.setattr(tr.risk, "trade_count_day", lambda: 101)
+    monkeypatch.setattr(tr.risk, "trade_count_day", lambda: 10)
     bot.run_cycle()
-    assert dummy.calls
     _, size_usd, _ = dummy.calls[0]
     base = 1000.0 * cfg.RISK_PER_TRADE * 1.0 / (1.0 / 100.0)
-    assert size_usd == base * 0.75
+    assert size_usd == base

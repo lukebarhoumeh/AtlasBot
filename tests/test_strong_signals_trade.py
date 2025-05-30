@@ -3,14 +3,16 @@ import pytest
 import atlasbot.config as cfg
 import atlasbot.trader as tr
 from atlasbot.decision_engine import DecisionEngine
+from atlasbot.execution.base import Fill
 
 
 class DummyExec:
     def __init__(self) -> None:
         self.calls = []
 
-    def submit_order(self, side: str, size_usd: float, symbol: str) -> None:
+    def submit_order(self, side: str, size_usd: float, symbol: str):
         self.calls.append((side, size_usd, symbol))
+        return Fill("id", size_usd / 100.0, 100.0)
 
 
 class DummyMarket:
