@@ -9,7 +9,7 @@ from typing import Optional
 import pandas as pd
 
 import atlasbot.config as cfg
-from atlasbot import risk
+from atlasbot import metrics, risk
 from atlasbot.ai_desk import LOG_PATH as DESK_LOG_PATH
 from atlasbot.ai_desk import AIDesk
 from atlasbot.config import LOG_PATH as TRADE_LOG_PATH
@@ -208,13 +208,17 @@ class IntradayTrader:
                 continue
             im = advice.get("rationale", {}).get("orderflow", 0.0)
             mo = advice.get("rationale", {}).get("momentum", 0.0)
-            if im * mo < 0 and abs(im) > 0.2:
+            if im * mo < 0 and abs(im) > cfg.CONFLICT_THRESH:
                 cnt = self._conflict_counts.get(symbol, 0) + 1
                 self._conflict_counts[symbol] = cnt
-                continue
+                if not cfg.ALLOW_CONFLICT:
+                    continue
+                risk.annotate_last_trade(conflict=True)
             else:
                 self._conflict_counts[symbol] = 0
             edge_bps = abs(advice.get("edge", 0.0) * 10_000)
+            metrics.edge_g.set(edge_bps)
+            metrics.edge_hist.observe(edge_bps)
             if edge_bps <= cfg.FEE_BPS + cfg.SLIPPAGE_BPS + cfg.MIN_EDGE_BPS:
                 continue
             side = "buy" if advice["bias"] == "long" else "sell"
@@ -233,6 +237,8 @@ class IntradayTrader:
             equity = risk.equity()
             conf = max(advice.get("confidence", 0.0), 0.0)
             size_usd = equity * cfg.RISK_PER_TRADE * conf / (atr / price if atr else 1)
+            if risk.trade_count_day() > 100:
+                size_usd *= 0.75
             order = {
                 "symbol": symbol,
                 "side": side,
@@ -251,6 +257,10 @@ class IntradayTrader:
             if not filled:
                 self.exec.submit_order(side, size_usd, symbol)
             risk.annotate_last_trade(signals=advice["rationale"], ret=0.0)
+            mbias = advice.get("rationale", {}).get("macro", 0.0)
+            hit = (side == "buy" and mbias > 0) or (side == "sell" and mbias < 0)
+            risk.record_macro_hit(hit)
+            metrics.trade_count_day_g.set(risk.trade_count_day())
 
 
 async def desk_runner():
