@@ -1,13 +1,20 @@
-openai>=1.0,<2
-boto3
-python-dotenv
-pandas
-numpy
-cryptography
-requests>=2.32          # keep everything else happy
-websocket-client>=1.8
-six>=1.17
-prometheus_client
+# ==== Core ====
+openai==1.82.1
+python-dotenv==1.1.0
+requests==2.32.3
+six==1.17.0
 
-# Coinbase live data
-cbpro2                  # drop the obsolete cbpro
+# ==== Data / math ====
+numpy==2.2.6
+pandas==2.2.3           # pulls in pytz & tzdata wheels automatically
+
+# ==== Crypto / security ====
+cryptography==45.0.3
+boto3==1.38.26          # pulls in botocore-1.38.26, jmespath-1.0.1, s3transfer-0.13.0
+
+# ==== Web / networking ====
+websocket-client==1.8.0
+prometheus_client==0.22.0
+
+# ==== Coinbase websocket / REST helper ====
+cbpro2==1.0.4
