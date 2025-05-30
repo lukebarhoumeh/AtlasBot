@@ -67,6 +67,8 @@ SUMMARY_INTERVAL_MIN = int(os.getenv("SUMMARY_INTERVAL_MIN", "10"))
 
 # configurable max hold time for live and simulated trades (minutes)
 MAX_HOLD_MIN = int(os.getenv("MAX_HOLD_MIN", "30"))
+K_TP = float(os.getenv("K_TP", "2"))
+K_SL = float(os.getenv("K_SL", "2"))
 CONFLICT_THRESH = max(0.05, float(os.getenv("CONFLICT_THRESH", "0.20")))
 ALLOW_CONFLICT = os.getenv("ALLOW_CONFLICT", "false").lower() == "true"
 MACRO_TTL_MIN = max(15, int(os.getenv("MACRO_TTL_MIN", "60")))

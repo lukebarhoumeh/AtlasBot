@@ -1,0 +1,3 @@
+{"timestamp": "2025-05-30T02:46:53.845130+00:00", "symbol": "BTC-USD", "side": "buy", "notional": 100, "price": 100, "fee": 0.0, "slip": 0.0, "realised": 0.0, "mtm": 0.0, "maker": true}
+{"timestamp": "2025-05-30T02:46:53.845153+00:00", "symbol": "BTC-USD", "side": "sell", "notional": 100, "price": 100, "fee": 0.0, "slip": 0.0, "realised": 0.0, "mtm": 0, "maker": false}
+{"timestamp": "2025-05-30T02:46:54.103040+00:00", "symbol": "BTC-USD", "side": "buy", "notional": 100, "price": 100, "fee": 0.1, "slip": 0.2, "realised": 0.0, "mtm": 0.0, "maker": false}

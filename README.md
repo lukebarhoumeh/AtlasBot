@@ -41,9 +41,8 @@ fees and slippage.
 
 Metrics are exposed at http://localhost:9000/metrics. GPT desk summaries are
 written to `logs/ai_advisor.log` every 10 minutes when `OPENAI_API_KEY` is set.
-
 Metrics include `atlasbot_feed_watchdog_total` alongside PnL and latency gauges.
-New gauges track edge quality and trade cadence.
+New gauges track edge quality, trade cadence and exit types.
 
 ## Environment vars
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import gzip
 import json
 import os
 import threading
@@ -174,6 +175,7 @@ class RiskManager:
     def _ledger_loop(self) -> None:
         while True:
             self._snapshot_ledger()
+            self._gzip_old_ledgers(Path("data"))
             time.sleep(60)
 
     def _snapshot_ledger(self) -> None:
@@ -187,6 +189,22 @@ class RiskManager:
         with open(path, "a") as f:
             for t in new_trades:
                 f.write(json.dumps(t) + "\n")
+
+    def _gzip_old_ledgers(self, root: Path) -> None:
+        cutoff = time.time() - 86_400
+        for p in root.glob("ledger_*.jsonl"):
+            try:
+                if (
+                    p.stat().st_mtime < cutoff
+                    and not p.with_suffix(p.suffix + ".gz").exists()
+                ):
+                    with open(p, "rb") as src, gzip.open(
+                        p.with_suffix(p.suffix + ".gz"), "wb"
+                    ) as dst:
+                        dst.write(src.read())
+                    os.remove(p)
+            except FileNotFoundError:
+                continue
 
     def _summary_row(self, now: datetime) -> dict:
         total_realised = sum(self.realised.values())
