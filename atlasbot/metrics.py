@@ -2,8 +2,15 @@ import threading
 import time
 
 import requests
-from prometheus_client import CollectorRegistry, Counter, Gauge, start_http_server
+from prometheus_client import (
+    CollectorRegistry,
+    Counter,
+    Gauge,
+    Histogram,
+    start_http_server,
+)
 
+import atlasbot.risk as risk
 from atlasbot.config import REST_TICKER_FMT
 from atlasbot.market_data import get_market
 from atlasbot.risk import cash, daily_pnl, equity, gross, maker_fill_ratio, total_mtm
@@ -39,6 +46,19 @@ equity_g = Gauge("atlasbot_equity_usd", "Total account equity", registry=REGISTR
 heartbeat_g = Gauge("bot_alive", "Bot heartbeat", registry=REGISTRY)
 maker_ratio_g = Gauge(
     "atlasbot_maker_fill_ratio", "Maker to total fill ratio", registry=REGISTRY
+)
+edge_g = Gauge("edge_bps", "Latest trade edge bps", registry=REGISTRY)
+edge_hist = Histogram(
+    "atlasbot_edge_bps",
+    "Edge basis points distribution",
+    registry=REGISTRY,
+    buckets=(5, 10, 15, 20, 25, 30, 40, 50, 80, 100, 150),
+)
+trade_count_day_g = Gauge(
+    "atlasbot_trade_count_day", "Trades executed today", registry=REGISTRY
+)
+macro_hit_rate_g = Gauge(
+    "atlasbot_macro_hit_rate", "Macro bias hit rate", registry=REGISTRY
 )
 gpt_errors_total = Counter("gpt_errors_total", "GPT desk errors", registry=REGISTRY)
 gpt_last_success_ts = Gauge(
@@ -92,6 +112,8 @@ def _update_loop() -> None:
         cash_g.set(cash())
         equity_g.set(equity())
         maker_ratio_g.set(maker_fill_ratio())
+        trade_count_day_g.set(risk.trade_count_day())
+        macro_hit_rate_g.set(risk.macro_hit_rate())
         warmup_complete_g.set(1 if getattr(md, "warmup_complete", False) else 0)
         if time.time() - last_hb >= 60:
             heartbeat_g.set(1)

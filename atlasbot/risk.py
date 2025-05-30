@@ -38,6 +38,7 @@ class RiskManager:
         self._ledger_idx = 0
         self.maker_fills = 0
         self.taker_fills = 0
+        self.day_trades = 0
         threading.Thread(target=self._ledger_loop, daemon=True).start()
 
     def _update_inventory(self, symbol: str, qty: float, price: float) -> float:
@@ -144,6 +145,9 @@ class RiskManager:
                 self.maker_fills += 1
             else:
                 self.taker_fills += 1
+            if self._last_snapshot.date() != datetime.now(timezone.utc).date():
+                self.day_trades = 0
+            self.day_trades += 1
 
             st = self.stats.setdefault(
                 symbol,
@@ -273,6 +277,25 @@ def daily_pnl() -> float:
 def maker_fill_ratio() -> float:
     total = _risk.maker_fills + _risk.taker_fills
     return _risk.maker_fills / total if total else 0.0
+
+
+_macro_hits = 0
+_macro_total = 0
+
+
+def record_macro_hit(hit: bool) -> None:
+    global _macro_hits, _macro_total
+    _macro_total += 1
+    if hit:
+        _macro_hits += 1
+
+
+def macro_hit_rate() -> float:
+    return _macro_hits / _macro_total if _macro_total else 0.0
+
+
+def trade_count_day() -> int:
+    return _risk.day_trades
 
 
 def last_trades(seconds: int) -> list[dict]:

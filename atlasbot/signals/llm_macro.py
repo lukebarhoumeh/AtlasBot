@@ -1,7 +1,10 @@
 import json
 import logging
 from datetime import datetime, timedelta, timezone
+
 from openai import OpenAI
+
+import atlasbot.config as cfg
 from atlasbot.config import OPENAI_MODEL
 from atlasbot.secrets_loader import get_openai_api_key
 
@@ -13,11 +16,12 @@ PROMPT = (
     "'headline': '...' } max 25 words."
 )
 
+
 class MacroBias:
-    def __init__(self, ttl_minutes: int = 60, enabled: bool = True):
+    def __init__(self, ttl_minutes: int = cfg.MACRO_TTL_MIN, enabled: bool = True):
         self.ttl = timedelta(minutes=ttl_minutes)
         self.enabled = enabled
-        self._cache = (0.0, 'llm_offline', datetime.now(timezone.utc) - self.ttl)
+        self._cache = (0.0, "llm_offline", datetime.now(timezone.utc) - self.ttl)
         self._last_warn = datetime.now(timezone.utc) - timedelta(hours=1)
 
     def _warn(self, reason: str) -> None:
@@ -45,7 +49,7 @@ class MacroBias:
             score = conf if bias == "long" else -conf if bias == "short" else 0.0
             headline = data.get("headline", "")
             return score, headline
-        except Exception as exc:                     # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
             self._warn(str(exc))
             return 0.0, "llm_offline"
 
@@ -59,7 +63,9 @@ class MacroBias:
             self._cache = (score, headline, now)
         return score
 
+
 _macro = MacroBias()
+
 
 def macro_bias(symbol: str) -> float:
     return _macro.macro_bias(symbol)

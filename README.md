@@ -43,6 +43,7 @@ Metrics are exposed at http://localhost:9000/metrics. GPT desk summaries are
 written to `logs/ai_advisor.log` every 10 minutes when `OPENAI_API_KEY` is set.
 
 Metrics include `atlasbot_feed_watchdog_total` alongside PnL and latency gauges.
+New gauges track edge quality and trade cadence.
 
 ## Environment vars
 
@@ -52,6 +53,9 @@ Metrics include `atlasbot_feed_watchdog_total` alongside PnL and latency gauges.
 * OPENAI_MODEL        – override model for macro signal (default gpt-4o-mini)
 * EXECUTION_MODE      – sim | paper (default sim)
 * MIN_EDGE_BPS        – minimum edge threshold
+* CONFLICT_THRESH     – orderflow/momentum disagreement cutoff
+* MACRO_TTL_MIN       – minutes to cache GPT macro bias
+* BREAKOUT_WEIGHT     – ensemble weight for breakout signal
 * K_TP                – ATR-based take profit multiplier
 * K_SL                – ATR-based stop loss multiplier
 * MAX_HOLD_MIN        – maximum hold time in minutes

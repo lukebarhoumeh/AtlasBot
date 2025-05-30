@@ -2,6 +2,8 @@
 
 ## Unreleased
 - Profit-first exits with ATR TP/SL
+- Tunable edge threshold and conflict filter
+- Breakout signal with adaptive trade-count curb
 - Maker vs taker tracking and conflict debounce
 - Circuit breaker and feed watchdog safeguards
 - Thread-safe ledger with stress test

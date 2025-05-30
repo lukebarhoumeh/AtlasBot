@@ -20,7 +20,7 @@ SLIPPAGE_BPS = 4  # simulated slippage (basis points)
 # fee and minimum edge thresholds
 FEE_BPS = int(0.0025 * 10_000)
 FEE_FLAT = 0.10
-MIN_EDGE_BPS = 3
+MIN_EDGE_BPS = max(8, min(int(os.getenv("MIN_EDGE_BPS", "15")), 20))
 CURRENT_TAKER_BPS = FEE_BPS
 CURRENT_MAKER_BPS = FEE_BPS
 
@@ -39,6 +39,7 @@ LOG_PATH = "data/logs/sim_tradesOverNight.csv"
 W_ORDERFLOW = 0.5
 W_MOMENTUM = 0.3
 W_MACRO = 0.2
+BREAKOUT_WEIGHT = float(os.getenv("BREAKOUT_WEIGHT", "0.2"))
 
 # --- risk limits ------------------------------------------------------------
 MAX_GROSS_USD = 1_000
@@ -63,6 +64,9 @@ FEE_MIN_USD = FEE_FLAT
 
 # configurable max hold time for live and simulated trades (minutes)
 MAX_HOLD_MIN = int(os.getenv("MAX_HOLD_MIN", "30"))
+CONFLICT_THRESH = max(0.05, float(os.getenv("CONFLICT_THRESH", "0.20")))
+ALLOW_CONFLICT = os.getenv("ALLOW_CONFLICT", "false").lower() == "true"
+MACRO_TTL_MIN = max(15, int(os.getenv("MACRO_TTL_MIN", "60")))
 
 # execution costs
 TAKER_FEE = 0.0025  # Coinbase taker fee
