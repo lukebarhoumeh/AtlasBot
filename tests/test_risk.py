@@ -8,4 +8,3 @@ def test_limits():
     order = {"symbol": "BTC-USD", "side": "buy", "size_usd": 600}
     assert not risk.check_risk(order)
     risk.record_fill("BTC-USD", "sell", 500, 100, 0.0, 0.0)
-

@@ -1,9 +1,10 @@
 import json
 import os
 import time
+from math import exp
 from pathlib import Path
 
-import numpy as np
+from numpy import corrcoef as _corr
 
 from atlasbot import risk
 from atlasbot.config import (
@@ -75,14 +76,17 @@ class DecisionEngine:
             if len(set(sigs)) <= 1:
                 corr = 0.0
             else:
-                corr = float(np.corrcoef(sigs, returns)[0, 1])
-                if np.isnan(corr):
+                try:
+                    corr = float(_corr(sigs, returns)[0, 1])
+                except Exception:
                     corr = 0.0
             edges[key] = corr
-        vals = np.array([edges[k] * ADAPT_TEMP for k in edges])
-        exps = np.exp(vals - np.max(vals))
-        w = exps / exps.sum()
-        self.weights = dict(zip(edges.keys(), w))
+        vals = [edges[k] * ADAPT_TEMP for k in edges]
+        m = max(vals)
+        exps = [exp(v - m) for v in vals]
+        total = sum(exps)
+        weights = [e / total for e in exps]
+        self.weights = dict(zip(edges.keys(), weights))
         WEIGHTS_FILE.parent.mkdir(exist_ok=True)
         with open(WEIGHTS_FILE, "w") as f:
             json.dump({"ts": time.time(), **self.weights}, f)

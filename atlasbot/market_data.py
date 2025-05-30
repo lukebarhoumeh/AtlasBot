@@ -27,7 +27,7 @@ SEED_TIMEOUT = 3  # s to wait before REST seed
 REST_POLL_INTERVAL = 5  # seconds between REST polling
 
 
-# ---------------------------------------------------------------- WebSocket client (vanilla)
+# ----------------------------- WebSocket client (vanilla)
 class _WSClient:
     def __init__(
         self,

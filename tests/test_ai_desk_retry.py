@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+
 import atlasbot.ai_desk as desk
 
 
@@ -7,7 +8,9 @@ def test_ai_retry(monkeypatch):
 
     def fake_create(*a, **k):
         txt = responses.pop(0)
-        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=txt))])
+        return SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content=txt))]
+        )
 
     monkeypatch.setattr(desk.client.chat.completions, "create", fake_create)
     desk.client.api_key = "x"
