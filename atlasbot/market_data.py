@@ -9,17 +9,29 @@ Real-time Coinbase price streamer + 1-minute bar cache
 
 from __future__ import annotations
 
+import collections as _collections
 import json
 import logging
+import math as _math
+import os as _os
 import threading
+import threading as _threading
 import time
+import time as _time
 from collections import defaultdict, deque
 from datetime import datetime, timedelta, timezone
 from typing import Deque, Dict, List, Tuple
 
+import requests as _requests
 import websocket  # type: ignore
 
-from atlasbot.config import REST_TICKER_FMT, SYMBOLS, WS_URL_ADVANCED, WS_URL_PRO
+from atlasbot.config import (
+    REST_TICKER_FMT,
+    SYMBOLS,
+    SYMBOLS_DEFAULT,
+    WS_URL_ADVANCED,
+    WS_URL_PRO,
+)
 
 ONE_MIN = 60
 BAR_SEC = ONE_MIN
@@ -88,7 +100,7 @@ class _WSClient:
                 self._store[j["product_id"]] = float(j["price"])
                 self._last_update = time.monotonic()
                 if self._on_tick_cb:
-                    self._on_tick_cb()
+                    self._on_tick_cb(j)
         except Exception as exc:  # noqa: BLE001
             logging.debug("malformed ws msg: %s (%s)", msg[:120], exc)
 
@@ -217,7 +229,7 @@ class MarketData:
                 self._prices,
                 on_open_cb=self._on_ws_open,
                 on_fail_cb=self._on_ws_fail,
-                on_tick_cb=lambda: setattr(self, "_last_update", time.monotonic()),
+                on_tick_cb=on_tick,
             )
             t = threading.Thread(target=ws.run_forever, daemon=True)
             t.start()
@@ -238,7 +250,7 @@ class MarketData:
             self._prices,
             on_open_cb=self._on_ws_open,
             on_fail_cb=self._on_ws_fail,
-            on_tick_cb=lambda: setattr(self, "_last_update", time.monotonic()),
+            on_tick_cb=on_tick,
         )
         threading.Thread(target=ws.run_forever, daemon=True).start()
 
@@ -312,3 +324,55 @@ def get_market(symbols: List[str] = SYMBOLS) -> MarketData:
         MarketData._instance = None
         _market = MarketData(symbols)
     return _market
+
+
+_SPREAD = _collections.defaultdict(lambda: 8)
+
+
+def on_tick(msg: dict) -> None:
+    """Update latency metrics on each tick."""
+
+    md = get_market()
+    md._last_update = time.monotonic()
+    now = time.time()
+    gap = (now - on_tick.last_seen[msg["product_id"]]) * 1000
+    from atlasbot import metrics
+
+    h = metrics.feed_latency_ms
+    if hasattr(h, "labels"):
+        h = h.labels(msg["product_id"])
+    h.observe(gap)
+    on_tick.last_seen[msg["product_id"]] = now
+
+
+on_tick.last_seen = _collections.defaultdict(lambda: time.time())
+
+
+def get_spread_bps(sym: str) -> int:
+    """Return spread for *sym* in bps, clamped between 1 and 15."""
+
+    val = _SPREAD[sym]
+    return max(1, min(15, int(val)))
+
+
+def _spread_loop() -> None:
+    """Background spread fetcher updating ``_SPREAD`` every minute."""
+
+    while True:
+        for s in SYMBOLS_DEFAULT:
+            try:
+                book = _requests.get(
+                    f"https://api.exchange.coinbase.com/products/{s}/book",
+                    params={"level": 1},
+                    timeout=1,
+                ).json()
+                bid = float(book["bids"][0][0])
+                ask = float(book["asks"][0][0])
+                spread = (ask - bid) * 1e4 / ((ask + bid) / 2)
+                _SPREAD[s] = max(1, min(15, int(_math.ceil(spread * 2))))
+            except Exception:  # noqa: BLE001
+                pass
+        _time.sleep(int(_os.getenv("SPREAD_SEC", "60")))
+
+
+_threading.Thread(target=_spread_loop, daemon=True).start()
