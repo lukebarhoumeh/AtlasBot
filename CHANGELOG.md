@@ -18,6 +18,7 @@
 - Maker fill ratio metric exposed
 - Configurable max hold time via MAX_HOLD_MIN
 - Decision engine scales edge by signal strength
+- Maker limit orders fall back to taker after 5 s with debug log
 - Per-run CSV ledger
 - EXECUTION_MODE env to toggle maker vs taker
 
