@@ -1,26 +1,18 @@
 # --- traded symbols ---------------------------------------------------------
 import os
 
-SYMBOLS = [
-    "BTC-USD",
-    "ETH-USD",
-    "DOGE-USD",
-    "AVAX-USD",
-    "SUI-USD",
-    "XLM-USD",
-    "HBAR-USD",
-    "ADA-USD",
-    "DOT-USD",
-    "LINK-USD",
-    "SOL-USD",
-]
+SYMBOLS = os.getenv(
+    "SYMBOLS",
+    "BTC-USD,ETH-USD,SOL-USD,ADA-USD,LTC-USD,"
+    "XRP-USD,DOGE-USD,LINK-USD,DOT-USD,HBAR-USD,ALGO-USD",
+).split(",")
 
 # --- strategy parameters ----------------------------------------------------
 SLIPPAGE_BPS = 4  # simulated slippage (basis points)
 # fee and minimum edge thresholds
 FEE_BPS = int(0.0025 * 10_000)
 FEE_FLAT = 0.10
-MIN_EDGE_BPS = 10
+MIN_EDGE_BPS = int(os.getenv("MIN_EDGE_BPS", "6"))
 CURRENT_TAKER_BPS = FEE_BPS
 CURRENT_MAKER_BPS = FEE_BPS
 
@@ -32,7 +24,7 @@ def profit_target(sym: str) -> float:
     return (fee_bps + slip + MIN_EDGE_BPS) / 10_000
 
 
-MAX_NOTIONAL = 50  # risk cap per position
+MAX_NOTIONAL = int(os.getenv("MAX_NOTIONAL", "200"))
 LOG_PATH = "data/logs/sim_tradesOverNight.csv"
 
 # --- alpha weights ----------------------------------------------------------
@@ -66,7 +58,15 @@ FEE_MIN_USD = FEE_FLAT
 SUMMARY_INTERVAL_MIN = int(os.getenv("SUMMARY_INTERVAL_MIN", "10"))
 
 # configurable max hold time for live and simulated trades (minutes)
-MAX_HOLD_MIN = int(os.getenv("MAX_HOLD_MIN", "30"))
+_mh_env = os.getenv("MAX_HOLD_MIN")
+if _mh_env:
+    MAX_HOLD_MIN = int(_mh_env)
+else:
+    import math
+
+    from atlasbot.market_data import BAR_SEC
+
+    MAX_HOLD_MIN = min(240, math.ceil((BAR_SEC / 60) * 2))
 K_TP = float(os.getenv("K_TP", "2"))
 K_SL = float(os.getenv("K_SL", "2"))
 CONFLICT_THRESH = max(0.05, float(os.getenv("CONFLICT_THRESH", "0.20")))
@@ -77,7 +77,7 @@ MACRO_TTL_MIN = max(15, int(os.getenv("MACRO_TTL_MIN", "60")))
 TAKER_FEE = 0.0025  # Coinbase taker fee
 
 # starting capital
-START_CASH = 50_000.0
+START_CASH = float(os.getenv("PAPER_CASH", "50000"))
 
 
 _last_fee_check = 0.0

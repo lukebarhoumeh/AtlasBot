@@ -22,6 +22,7 @@ import websocket  # type: ignore
 from atlasbot.config import REST_TICKER_FMT, SYMBOLS, WS_URL_ADVANCED, WS_URL_PRO
 
 ONE_MIN = 60
+BAR_SEC = ONE_MIN
 BAR_HISTORY = 5_000  # ≈ 3.5 days
 SEED_TIMEOUT = 3  # s to wait before REST seed
 REST_POLL_INTERVAL = 5  # seconds between REST polling
