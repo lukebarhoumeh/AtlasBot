@@ -1,10 +1,15 @@
+import asyncio
 import os
 import sys
+import time
 import types
 from pathlib import Path
 
 import pkg_resources
 import pytest
+
+time.sleep = lambda *_a, **_k: None
+asyncio.sleep = lambda *_a, **_k: None
 
 for name in ("dotenv", "boto3", "openai", "requests", "websocket"):
     if name not in sys.modules:
@@ -104,3 +109,8 @@ for pkg in ("pandas", "requests", "ccxt"):
         pkg_resources.working_set.add(dist)
 
 os.environ.setdefault("ATLAS_TEST", "1")
+
+
+def pytest_addoption(parser: pytest.Parser) -> None:
+    """Register noop ``--timeout`` option for offline tests."""
+    parser.addoption("--timeout", action="store", default=None, help="no-op")
