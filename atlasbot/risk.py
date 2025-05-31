@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import gzip
 import json
+import logging
 import os
 import threading
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import atlasbot.config as cfg
 from atlasbot.config import (
     FEE_MIN_USD,
     MAX_DAILY_LOSS,
@@ -16,6 +18,15 @@ from atlasbot.config import (
     TAKER_FEE,
 )
 from atlasbot.utils import fetch_price
+
+
+class CircuitBreaker:
+    """Simple circuit breaker stub."""
+
+    @staticmethod
+    def trip(_reason: str) -> None:
+        pass
+
 
 PNL_PATH = "data/logs/pnl.csv"
 DAILY_PATH = "data/logs/daily_pnl.csv"
@@ -378,3 +389,26 @@ def check_circuit_breaker() -> bool:
 def circuit_breaker_active() -> bool:
     """True if the circuit breaker is currently active."""
     return time.time() < _circuit_until
+
+
+logger = logging.getLogger(__name__)
+
+
+def latency_breaker() -> None:
+    """Background task tripping circuit if feed latency is high."""
+    import atlasbot.metrics as m
+
+    while True:
+        for sym in cfg.SYMBOLS_DEFAULT:
+            h = m.feed_latency_ms
+            if hasattr(h, "labels"):
+                h = h.labels(sym)
+            count = getattr(getattr(h, "_count", None), "get", lambda: 0)()
+            total = getattr(getattr(h, "_sum", None), "get", lambda: 0)()
+            if count and (total / count) > 200:
+                logger.warning("Latency breaker tripped on %s", sym)
+                try:
+                    CircuitBreaker.trip("ws-latency")
+                except Exception:  # noqa: BLE001
+                    pass
+        time.sleep(30)

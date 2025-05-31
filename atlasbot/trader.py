@@ -17,7 +17,7 @@ from atlasbot.config import profit_target
 from atlasbot.decision_engine import DecisionEngine
 from atlasbot.execution import get_backend
 from atlasbot.gpt_report import GPTTrendAnalyzer
-from atlasbot.market_data import get_market
+from atlasbot.market_data import get_market, get_spread_bps
 from atlasbot.secrets_loader import get_openai_api_key
 from atlasbot.utils import calculate_atr, fetch_price, fetch_volatility
 
@@ -219,7 +219,8 @@ class IntradayTrader:
             edge_bps = abs(advice.get("edge", 0.0) * 10_000)
             metrics.edge_g.set(edge_bps)
             metrics.edge_hist.observe(edge_bps)
-            if edge_bps <= cfg.FEE_BPS + cfg.SLIPPAGE_BPS + cfg.MIN_EDGE_BPS:
+            min_edge = max(cfg.MIN_EDGE_BPS, get_spread_bps(symbol))
+            if edge_bps <= cfg.FEE_BPS + cfg.SLIPPAGE_BPS + min_edge:
                 continue
             side = "buy" if advice["bias"] == "long" else "sell"
             price = fetch_price(symbol)

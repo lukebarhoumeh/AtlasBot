@@ -4,10 +4,12 @@ import json
 import logging
 import os
 import signal
+import threading
 import time
 
 import openai
 
+import atlasbot.metrics as metrics
 from atlasbot import risk
 from atlasbot.config import start_fee_updater
 from atlasbot.metrics import start_metrics_server
@@ -61,6 +63,7 @@ def main(simulate: bool = False, max_loops: int = 0) -> None:
     args = parser.parse_args([] if simulate else None)
 
     start_fee_updater()
+    threading.Thread(target=risk.latency_breaker, daemon=True).start()
     start_metrics_server()
     bot = IntradayTrader(backend=args.backend)
     end_time = time.time() + args.time if args.time else None
@@ -85,6 +88,7 @@ def main(simulate: bool = False, max_loops: int = 0) -> None:
         pnl = df.get("realised", df.get("realized_pnl", pd.Series([0]))).sum()
         start_cash = float(os.getenv("PAPER_CASH", "50000"))
         logger.info("Run P&L: %.2f USD  (%.2f%%)", pnl, pnl / start_cash * 100)
+        metrics.cum_pnl_usd.set(pnl)
     _finalize()
 
 

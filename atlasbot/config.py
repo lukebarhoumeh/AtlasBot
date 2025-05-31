@@ -1,11 +1,11 @@
 # --- traded symbols ---------------------------------------------------------
 import os
 
-SYMBOLS = os.getenv(
-    "SYMBOLS",
+SYMBOLS_DEFAULT = (
     "BTC-USD,ETH-USD,SOL-USD,ADA-USD,LTC-USD,"
-    "XRP-USD,DOGE-USD,LINK-USD,DOT-USD,HBAR-USD,ALGO-USD",
+    "XRP-USD,DOGE-USD,LINK-USD,DOT-USD,HBAR-USD,ALGO-USD"
 ).split(",")
+SYMBOLS = os.getenv("SYMBOLS", ",".join(SYMBOLS_DEFAULT)).split(",")
 
 # --- strategy parameters ----------------------------------------------------
 SLIPPAGE_BPS = 4  # simulated slippage (basis points)

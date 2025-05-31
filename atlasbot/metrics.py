@@ -17,6 +17,7 @@ from atlasbot.risk import cash, daily_pnl, equity, gross, maker_fill_ratio, tota
 from atlasbot.signals import poll_latency
 
 REGISTRY = CollectorRegistry()
+feed_latency_ms = Histogram("feed_latency_ms", "WS gap", ["symbol"], registry=REGISTRY)
 ws_latency_g = Gauge(
     "atlasbot_ws_latency_ms",
     "WebSocket price latency (ms)",
@@ -43,6 +44,7 @@ gross_pos_g = Gauge(
 )
 cash_g = Gauge("atlasbot_cash_usd", "Available cash", registry=REGISTRY)
 equity_g = Gauge("atlasbot_equity_usd", "Total account equity", registry=REGISTRY)
+cum_pnl_usd = Gauge("cum_pnl_usd", "Cumulative realized PnL in USD", registry=REGISTRY)
 heartbeat_g = Gauge("bot_alive", "Bot heartbeat", registry=REGISTRY)
 maker_ratio_g = Gauge(
     "atlasbot_maker_fill_ratio", "Maker to total fill ratio", registry=REGISTRY
