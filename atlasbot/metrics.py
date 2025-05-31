@@ -17,7 +17,13 @@ from atlasbot.risk import cash, daily_pnl, equity, gross, maker_fill_ratio, tota
 from atlasbot.signals import poll_latency
 
 REGISTRY = CollectorRegistry()
-feed_latency_ms = Histogram("feed_latency_ms", "WS gap", ["symbol"], registry=REGISTRY)
+feed_latency_ms = Histogram(
+    "feed_latency_ms",
+    "WS gap",
+    ["symbol"],
+    registry=REGISTRY,
+    buckets=(1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000)
+)
 ws_latency_g = Gauge(
     "atlasbot_ws_latency_ms",
     "WebSocket price latency (ms)",
