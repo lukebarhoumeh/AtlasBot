@@ -1,13 +1,15 @@
 import json
+import logging
 import os
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
 import pandas as pd
-
 from atlasbot import risk, run_logger
 from atlasbot.config import FEE_MIN_USD, TAKER_FEE
+
+logger = logging.getLogger(__name__)
 
 PNL_PATH = "data/logs/pnl.csv"
 
@@ -37,9 +39,12 @@ def log_fill(
     realised, mtm = risk.record_fill(symbol, side, notional, price, fee, slip, maker)
     risk.check_circuit_breaker()
     ts = datetime.now(timezone.utc)
-    print(
-        f"[FILLED] {ts:%H:%M:%SZ}  {symbol}  {side.upper()}  ${notional:.2f} @ "
-        f"{price:,.2f}  fee=${fee:.2f}"
+    logger.info(
+        "TRADE %s %s @ %.2f  notional=%.2f",
+        side,
+        symbol,
+        price,
+        notional,
     )
     row = {
         "timestamp": ts.isoformat(),

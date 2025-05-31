@@ -40,7 +40,8 @@ class RiskManager:
         self.maker_fills = 0
         self.taker_fills = 0
         self.day_trades = 0
-        threading.Thread(target=self._ledger_loop, daemon=True).start()
+        if not os.getenv("ATLAS_TEST"):
+            threading.Thread(target=self._ledger_loop, daemon=True).start()
 
     def _update_inventory(self, symbol: str, qty: float, price: float) -> float:
         lots = self.lots.setdefault(symbol, [])

@@ -52,6 +52,10 @@ New gauges track edge quality, trade cadence and exit types.
 * OPENAI_MODEL        – override model for macro signal (default gpt-4o-mini)
 * EXECUTION_MODE      – maker | taker (default maker)
 * MIN_EDGE_BPS        – minimum edge threshold
+* CYCLE_SEC          – main loop delay seconds (default 1)
+* SYMBOLS            – comma list of trading pairs
+* MAX_NOTIONAL       – position size USD cap (default 200)
+* PAPER_CASH         – starting cash for paper or sim
 * CONFLICT_THRESH     – orderflow/momentum disagreement cutoff
 * MACRO_TTL_MIN       – minutes to cache GPT macro bias
 * BREAKOUT_WEIGHT     – ensemble weight for breakout signal
