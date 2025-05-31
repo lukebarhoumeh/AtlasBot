@@ -1,5 +1,6 @@
 import json
 import os
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -67,3 +68,26 @@ def log_fill(
 def submit_maker_order(side: str, size_usd: float, symbol: str) -> Fill | None:
     """Submit a maker (post-only) order. Return fill details or None."""
     raise NotImplementedError
+
+
+def maker_to_taker(
+    exec_api: object, side: str, size_usd: float, symbol: str, wait_s: int = 5
+) -> Fill:
+    """Attempt maker then fall back to IOC market order.
+
+    Args:
+        exec_api: Execution module with submit_maker_order and submit_order.
+        side: Order side ("buy" or "sell").
+        size_usd: Order notional in USD.
+        symbol: Trading symbol.
+        wait_s: Seconds to wait for maker fill before falling back.
+
+    Returns:
+        Fill: Order fill details from the executed order.
+    """
+    if hasattr(exec_api, "submit_maker_order"):
+        filled = exec_api.submit_maker_order(side, size_usd, symbol)
+        if filled:
+            return filled
+    time.sleep(wait_s)
+    return exec_api.submit_order(side, size_usd, symbol)
