@@ -20,7 +20,7 @@ SLIPPAGE_BPS = 4  # simulated slippage (basis points)
 # fee and minimum edge thresholds
 FEE_BPS = int(0.0025 * 10_000)
 FEE_FLAT = 0.10
-MIN_EDGE_BPS = max(8, min(int(os.getenv("MIN_EDGE_BPS", "15")), 20))
+MIN_EDGE_BPS = 10
 CURRENT_TAKER_BPS = FEE_BPS
 CURRENT_MAKER_BPS = FEE_BPS
 
@@ -32,7 +32,7 @@ def profit_target(sym: str) -> float:
     return (fee_bps + slip + MIN_EDGE_BPS) / 10_000
 
 
-MAX_NOTIONAL_USD = 100  # risk cap per position
+MAX_NOTIONAL = 50  # risk cap per position
 LOG_PATH = "data/logs/sim_tradesOverNight.csv"
 
 # --- alpha weights ----------------------------------------------------------

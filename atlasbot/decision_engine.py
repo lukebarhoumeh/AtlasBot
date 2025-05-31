@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import time
 from math import exp
@@ -9,6 +10,7 @@ from numpy import corrcoef as _corr
 from atlasbot import risk
 from atlasbot.config import (
     BREAKOUT_WEIGHT,
+    FEE_BPS,
     W_MACRO,
     W_MOMENTUM,
     W_ORDERFLOW,
@@ -50,6 +52,13 @@ class DecisionEngine:
         bias = "long" if score > 0 else "short" if score < 0 else "flat"
         # scale edge so strong signals clear execution costs
         raw_edge = profit_target(symbol) * score * 2
+        edge_bps = abs(raw_edge) * 10_000
+        logging.debug(
+            "edge=%.2f  strength=%.2f  fees=%.2f",
+            edge_bps,
+            abs(score),
+            FEE_BPS,
+        )
         return {
             "bias": bias,
             "confidence": abs(score),

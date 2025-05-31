@@ -18,3 +18,4 @@ prometheus_client>=0.20
 
 # ==== Coinbase websocket / REST helper ====
 cbpro2==1.0.4
+pytest-timeout>=2.2
