@@ -40,7 +40,7 @@ class TradingBot:
         log_file: str = TRADE_LOG_PATH,
     ):
         self.symbols = symbols
-        self.max_notional_usd = max_notional_usd or cfg.MAX_NOTIONAL_USD
+        self.max_notional_usd = max_notional_usd or cfg.MAX_NOTIONAL
         self.gpt = gpt_trend_analyzer or GPTTrendAnalyzer(enabled=False)
         self.log_file = log_file
         self._skip_logged: set[str] = set()

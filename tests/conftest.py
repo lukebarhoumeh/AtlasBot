@@ -1,3 +1,9 @@
+import time
+
+# ruff: noqa: E402
+
+time.sleep = lambda *_a, **_k: None  # all sleeps are instant in tests  # noqa: E402
+
 import os
 import sys
 import types
