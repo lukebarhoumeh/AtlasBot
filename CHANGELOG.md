@@ -24,6 +24,7 @@
 - Maker limit orders fall back to taker after 5 s with debug log
 - Per-run CSV ledger
 - EXECUTION_MODE env to toggle maker vs taker
+- Windows-compatible run logger via safe fsync
 
 ## 0.4.0 - 2025-05-30
 - Sprint 5 features and bug fixes
