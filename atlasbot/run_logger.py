@@ -9,44 +9,53 @@ from typing import Sequence
 
 import pandas as pd
 
+# ──────────────────────────── paths ──────────────────────────────
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 RUN_DIR = REPO_ROOT / "data" / "runs"
 RUN_DIR.mkdir(parents=True, exist_ok=True)
+
 RUN_CSV = RUN_DIR / f"ledger_{datetime.now(timezone.utc):%Y-%m-%d_%H-%M-%S}.csv"
-DECISIONS_CSV = (
-    REPO_ROOT / "logs" / f"decisions_{datetime.now(timezone.utc):%Y-%m-%d}.csv"
-)
+DECISIONS_CSV = REPO_ROOT / "logs" / f"decisions_{datetime.now(timezone.utc):%Y-%m-%d}.csv"
 
 
+# ────────────────────────── helpers ──────────────────────────────
 def _safe_sync(paths: Sequence[Path]) -> None:
-    """Safely sync *paths* to disk cross-platform.
+    """Flush *paths* to disk on any OS.
 
-    Args:
-        paths: File paths whose contents should be flushed to disk.
+    POSIX  : call ``os.sync()`` (flushes all dirty buffers).
+    Windows: open each file in append-binary mode, flush + fsync.
+    Silently ignores fsync errors on readonly handles (EBADF).
     """
-    if hasattr(os, "sync"):
+    if hasattr(os, "sync"):                # Linux / macOS fast-path
         os.sync()
-    else:
-        for p in paths:
-            if p.exists():
-                with open(p, "rb") as fh:
-                    os.fsync(fh.fileno())
+        return
+
+    for p in paths:
+        if not p.exists():
+            continue
+        try:
+            # open for append so Windows allows fsync
+            with open(p, "ab", buffering=0) as fh:
+                fh.flush()
+                os.fsync(fh.fileno())
+        except (OSError, AttributeError):
+            # Windows may raise EBADF or fsync may be absent—safe to ignore
+            pass
 
 
+# ───────────────────────── CSV writers ───────────────────────────
 def append(row: dict) -> None:
-    """Append *row* to the run ledger CSV."""
+    """Append a *row* to the per-run ledger CSV."""
     header = not RUN_CSV.exists()
     RUN_CSV.parent.mkdir(parents=True, exist_ok=True)
-    df = pd.DataFrame([row])
-    df.to_csv(RUN_CSV, mode="a", header=header, index=False)
+    pd.DataFrame([row]).to_csv(RUN_CSV, mode="a", header=header, index=False)
     _safe_sync([RUN_CSV, DECISIONS_CSV])
 
 
 def log_decision(row: dict) -> None:
-    """Append decision *row* to the daily CSV ledger."""
+    """Append a decision *row* to the daily decision CSV."""
     header = not DECISIONS_CSV.exists()
     DECISIONS_CSV.parent.mkdir(parents=True, exist_ok=True)
-    df = pd.DataFrame([row])
-    df.to_csv(DECISIONS_CSV, mode="a", header=header, index=False)
+    pd.DataFrame([row]).to_csv(DECISIONS_CSV, mode="a", header=header, index=False)
     _safe_sync([RUN_CSV, DECISIONS_CSV])
