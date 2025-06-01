@@ -29,3 +29,4 @@
 
 ## 0.4.0 - 2025-05-30
 - Sprint 5 features and bug fixes
+- Diagnostics module summarising env + last rejects

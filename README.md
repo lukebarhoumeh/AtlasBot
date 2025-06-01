@@ -43,6 +43,7 @@ Metrics are exposed at http://localhost:9000/metrics. GPT desk summaries are
 written to `logs/ai_advisor.log` every 10 minutes when `OPENAI_API_KEY` is set.
 Metrics include `atlasbot_feed_watchdog_total` alongside PnL and latency gauges.
 New gauges track edge quality, trade cadence and exit types.
+Run `python -m atlasbot.diagnostics` to print environment and recent rejects.
 
 ## Environment vars
 
