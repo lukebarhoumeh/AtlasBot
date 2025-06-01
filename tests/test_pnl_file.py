@@ -20,6 +20,6 @@ def test_pnl_row(monkeypatch, tmp_path):
     sim.submit_order("sell", 50, "BTC-USD")
     df = pd.read_csv(PNL_PATH)
     row = df.iloc[-1]
-    assert len(row) == 9
+    assert len(row) == 13
     assert row["fee"] >= 0
     assert row["slip"] >= 0

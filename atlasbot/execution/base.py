@@ -4,8 +4,10 @@ import os
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from typing import Any, Callable
 
 import pandas as pd
+
 from atlasbot import risk, run_logger
 from atlasbot.config import FEE_MIN_USD, TAKER_FEE
 
@@ -15,6 +17,28 @@ PNL_PATH = "data/logs/pnl.csv"
 
 
 FILL_DIR = "data/fills"
+
+
+def request_with_retries(
+    method: Callable[..., Any],
+    url: str,
+    retries: int = 3,
+    timeout: int = 5,
+    **kwargs: Any,
+) -> Any:
+    """Return HTTP response from *method* with retry logic."""
+
+    for attempt in range(retries):
+        try:
+            resp = method(url, timeout=timeout, **kwargs)
+            if resp.status_code >= 500:
+                time.sleep(2**attempt)
+                continue
+            return resp
+        except Exception as exc:  # noqa: BLE001
+            logger.error("HTTP request error: %s", exc)
+            time.sleep(2**attempt)
+    raise RuntimeError(f"Request to {url} failed after {retries} retries")
 
 
 @dataclass
@@ -33,6 +57,10 @@ def log_fill(
     price: float,
     slip: float = 0.0,
     maker: bool = False,
+    book_before: list[tuple[float, float]] | None = None,
+    book_after: list[tuple[float, float]] | None = None,
+    response: dict | None = None,
+    latency_ms: float | None = None,
 ) -> None:
     """Print fill info and append to pnl.csv and jsonl fills."""
     fee = max(notional * TAKER_FEE, FEE_MIN_USD)
@@ -56,6 +84,10 @@ def log_fill(
         "slip": round(slip, 4),
         "realised": round(realised, 4),
         "mtm": round(mtm, 4),
+        "book_before": book_before,
+        "book_after": book_after,
+        "api_response": response,
+        "latency_ms": round(latency_ms or 0.0, 2),
     }
     os.makedirs(os.path.dirname(PNL_PATH), exist_ok=True)
     pd.DataFrame([row]).to_csv(
