@@ -9,8 +9,15 @@ from pathlib import Path
 from numpy import corrcoef as _corr
 
 from atlasbot import risk
-from atlasbot.config import (BREAKOUT_WEIGHT, FEE_BPS, MIN_EDGE_BPS,
-                             SLIPPAGE_BPS, W_MACRO, W_MOMENTUM, W_ORDERFLOW)
+from atlasbot.config import (
+    BREAKOUT_WEIGHT,
+    FEE_BPS_MAKER,
+    MIN_EDGE_BPS,
+    SLIPPAGE_BPS,
+    W_MACRO,
+    W_MOMENTUM,
+    W_ORDERFLOW,
+)
 from atlasbot.market_data import get_spread_bps
 from atlasbot.run_logger import log_decision
 from atlasbot.signals import breakout, imbalance, macro_bias, momentum
@@ -22,6 +29,22 @@ WEIGHTS_FILE = Path("data/weights.json")
 # price history for hybrid signal
 _tick_history: dict[str, deque[float]] = defaultdict(lambda: deque(maxlen=10))
 _window_history: dict[str, deque[tuple[float, float]]] = defaultdict(lambda: deque())
+
+
+def vol_window_std(window: int = 30) -> float:
+    """Return rolling standard deviation of mid-price over *window* seconds."""
+    hist = _window_history.get(_cur_symbol, deque())
+    if not hist:
+        return 0.0
+    prices = [p for _, p in list(hist)[-window:]]
+    if len(prices) < 2:
+        return 0.0
+    mean = sum(prices) / len(prices)
+    var = sum((px - mean) ** 2 for px in prices) / len(prices)
+    return var**0.5
+
+
+_cur_symbol = ""
 
 
 def _zscore(seq: list[float]) -> float:
@@ -53,15 +76,12 @@ def hybrid_signal(symbol: str) -> float:
     return max(-1.0, min(1.0, score))
 
 
-def expected_edge_bps(
-    signal: float,
-    tick_size: float,
-    mid_px: float,
-    fee_bps: int,
-    slippage_bps: int,
-) -> float:
+def expected_edge_bps(signal: float, mid: float, spread_bps: float) -> float:
     """Return expected edge in basis points."""
-    return 1e4 * (signal * tick_size / mid_px) - fee_bps - slippage_bps
+    vol = vol_window_std()
+    gross = 1e4 * signal * vol / mid
+    costs = FEE_BPS_MAKER + SLIPPAGE_BPS + 0.2 * spread_bps
+    return gross - costs
 
 
 class DecisionEngine:
@@ -94,7 +114,10 @@ class DecisionEngine:
         )
         price = fetch_price(symbol)
         bias = "long" if score > 0 else "short" if score < 0 else "flat"
-        edge_bps = expected_edge_bps(score, 0.01, price, FEE_BPS, SLIPPAGE_BPS)
+        global _cur_symbol
+        _cur_symbol = symbol
+        spread_bps = get_spread_bps(symbol)
+        edge_bps = expected_edge_bps(score, price, spread_bps)
         latency_ms = (time.perf_counter_ns() - start) / 1e6
         log_decision(
             {
@@ -105,7 +128,7 @@ class DecisionEngine:
                 "edge_bps": edge_bps,
                 "score": score,
                 "latency_ms": latency_ms,
-                "spread_bps": get_spread_bps(symbol),
+                "spread_bps": spread_bps,
                 "order_id": "",
             }
         )

@@ -51,7 +51,8 @@ New gauges track edge quality, trade cadence and exit types.
 * LOG_LEVEL           – DEBUG|INFO|WARN|ERROR (default INFO)
 * OPENAI_MODEL        – override model for macro signal (default gpt-4o-mini)
 * EXECUTION_MODE      – maker | taker (default maker)
-* MIN_EDGE_BPS        – minimum edge threshold
+* MIN_EDGE_BPS        – minimum edge threshold (default 5)
+* FALLBACK_DELAY      – seconds to wait before taker fallback (default 1.5)
 * CYCLE_SEC          – main loop delay seconds (default 1)
 * SYMBOLS            – comma list of trading pairs
 * MAX_NOTIONAL       – position size USD cap (default 200)

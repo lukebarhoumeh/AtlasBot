@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 
-from atlasbot.config import CURRENT_TAKER_BPS
+from atlasbot.config import CURRENT_TAKER_BPS, FALLBACK_DELAY
 from atlasbot.execution.base import Fill
 
 
@@ -27,7 +27,9 @@ def place_maker(
         filled = exec_api.submit_maker_order(side, size_usd, symbol)
         if filled:
             return filled
-        wait_s = max(2.0, 1.0 / max(fill_probability(edge_bps, spread_bps), 1e-6))
+        wait_s = max(
+            FALLBACK_DELAY, 1.0 / max(fill_probability(edge_bps, spread_bps), 1e-6)
+        )
         time.sleep(wait_s)
     if edge_bps > CURRENT_TAKER_BPS:
         return exec_api.submit_order(side, size_usd, symbol)
