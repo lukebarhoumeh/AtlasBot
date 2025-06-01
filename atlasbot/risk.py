@@ -14,6 +14,7 @@ from atlasbot.config import (
     FEE_MIN_USD,
     MAX_DAILY_LOSS,
     MAX_GROSS_USD,
+    MAX_NOTIONAL,
     START_CASH,
     TAKER_FEE,
 )
@@ -42,6 +43,7 @@ class RiskManager:
         self.equity = starting_cash
         self.free_margin = starting_cash
         self.day_start_equity = starting_cash
+        self.day_high_equity = starting_cash
         self._last_snapshot = datetime.now(timezone.utc)
         self.trades: list[dict] = []
         self.stats: dict[str, dict] = {}
@@ -93,6 +95,8 @@ class RiskManager:
 
     def check_risk(self, symbol: str, side: str, size_usd: float) -> bool:
         with self._lock:
+            if size_usd > MAX_NOTIONAL:
+                return False
             pos = sum(abs(q) * p for q, p in self.lots.get(symbol, []))
             new_pos = pos + size_usd if side == "buy" else pos - size_usd
             if abs(new_pos) > MAX_GROSS_USD:
@@ -139,6 +143,9 @@ class RiskManager:
                 unrealised_total += sum(q * (cur_px - p) for q, p in lots)
             self.equity = self.cash + unrealised_total
             self.free_margin = self.cash
+            self.day_high_equity = max(self.day_high_equity, self.equity)
+            if self.equity <= self.day_high_equity * 0.95:
+                trigger_kill_switch("drawdown")
             self._maybe_snapshot()
             trade = {
                 "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -371,6 +378,8 @@ def summary_row() -> dict:
 
 
 _circuit_until = 0.0
+_kill_switch = False
+_kill_reason = ""
 
 
 def check_circuit_breaker() -> bool:
@@ -389,6 +398,27 @@ def check_circuit_breaker() -> bool:
 def circuit_breaker_active() -> bool:
     """True if the circuit breaker is currently active."""
     return time.time() < _circuit_until
+
+
+def kill_switch_triggered() -> bool:
+    """Return ``True`` if the kill switch has been activated."""
+
+    return _kill_switch
+
+
+def trigger_kill_switch(reason: str) -> None:
+    """Activate kill switch and log *reason*."""
+
+    global _kill_switch, _kill_reason
+    _kill_switch = True
+    _kill_reason = reason
+    logger.error("Kill switch triggered: %s", reason)
+
+
+def kill_reason() -> str:
+    """Return the reason for the kill switch."""
+
+    return _kill_reason
 
 
 logger = logging.getLogger(__name__)

@@ -64,6 +64,12 @@ New gauges track edge quality, trade cadence and exit types.
 * K_SL                – ATR-based stop loss multiplier
 * MAX_HOLD_MIN        – maximum hold time in minutes
 * ALLOW_CONFLICT      – allow conflict trades if true
+* KILL_SWITCH_DD      – kill trading if equity drawdown exceeds this fraction
+
+## Trade Log Review
+
+Run `python -m atlasbot.trade_review <path>` to summarise session PnL, win rate
+and latency distribution.
 
 ## Troubleshooting
 
