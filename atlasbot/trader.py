@@ -220,7 +220,7 @@ class IntradayTrader:
             metrics.edge_g.set(edge_bps)
             metrics.edge_hist.observe(edge_bps)
             min_edge = max(cfg.MIN_EDGE_BPS, get_spread_bps(symbol))
-            if edge_bps <= cfg.FEE_BPS + cfg.SLIPPAGE_BPS + min_edge:
+            if edge_bps <= cfg.FEE_BPS_TAKER + cfg.SLIPPAGE_BPS + min_edge:
                 continue
             side = "buy" if advice["bias"] == "long" else "sell"
             price = fetch_price(symbol)

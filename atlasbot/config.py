@@ -10,16 +10,19 @@ SYMBOLS = os.getenv("SYMBOLS", ",".join(SYMBOLS_DEFAULT)).split(",")
 # --- strategy parameters ----------------------------------------------------
 SLIPPAGE_BPS = 4  # simulated slippage (basis points)
 # fee and minimum edge thresholds
-FEE_BPS = int(0.0025 * 10_000)
+FEE_BPS_MAKER = 0
+FEE_BPS_TAKER = 25
 FEE_FLAT = 0.10
-MIN_EDGE_BPS = int(os.getenv("MIN_EDGE_BPS", "6"))
-CURRENT_TAKER_BPS = FEE_BPS
-CURRENT_MAKER_BPS = FEE_BPS
+MIN_EDGE_BPS = int(os.getenv("MIN_EDGE_BPS", "5"))
+FALLBACK_DELAY = float(os.getenv("FALLBACK_DELAY", "1.5"))
+TARGET_VOL_BPS = 35
+CURRENT_TAKER_BPS = FEE_BPS_TAKER
+CURRENT_MAKER_BPS = FEE_BPS_MAKER
 
 
 def profit_target(sym: str) -> float:
     """Return cost-aware profit target for *sym* as a percentage."""
-    fee_bps = FEE_BPS
+    fee_bps = FEE_BPS_TAKER
     slip = SLIPPAGE_BPS
     return (fee_bps + slip + MIN_EDGE_BPS) / 10_000
 
@@ -98,7 +101,7 @@ def refresh_fee_tier() -> None:
             j = r.json()
             CURRENT_MAKER_BPS = int(float(j.get("maker_fee_rate", 0)) * 10_000)
             CURRENT_TAKER_BPS = int(float(j.get("taker_fee_rate", 0)) * 10_000)
-            MIN_EDGE_BPS = 2 if CURRENT_TAKER_BPS < FEE_BPS else 3
+            MIN_EDGE_BPS = 2 if CURRENT_TAKER_BPS < FEE_BPS_TAKER else 3
             _last_fee_check = time.time()
     except Exception:  # noqa: BLE001
         pass

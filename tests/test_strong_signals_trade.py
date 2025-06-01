@@ -24,7 +24,8 @@ def _setup_bot(
 ) -> tuple[tr.IntradayTrader, DummyExec]:
     monkeypatch.setattr(tr, "SYMBOLS", ["BTC-USD"])
     monkeypatch.setattr(cfg, "SYMBOLS", ["BTC-USD"])
-    monkeypatch.setattr(cfg, "FEE_BPS", 0)
+    monkeypatch.setattr(cfg, "FEE_BPS_MAKER", 0)
+    monkeypatch.setattr(cfg, "FEE_BPS_TAKER", 0)
     monkeypatch.setattr(cfg, "SLIPPAGE_BPS", 0)
     monkeypatch.setattr(cfg, "MIN_EDGE_BPS", 0)
     import importlib as _importlib

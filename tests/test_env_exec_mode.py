@@ -28,7 +28,8 @@ def _run_bot(monkeypatch, mode: str) -> DummyExec:
     monkeypatch.setenv("EXECUTION_MODE", mode)
     cfg = importlib.reload(cfg_mod)
     tr = importlib.reload(tr_mod)
-    monkeypatch.setattr(cfg, "FEE_BPS", 0)
+    monkeypatch.setattr(cfg, "FEE_BPS_MAKER", 0)
+    monkeypatch.setattr(cfg, "FEE_BPS_TAKER", 0)
     monkeypatch.setattr(cfg, "SLIPPAGE_BPS", 0)
     monkeypatch.setattr(cfg, "MIN_EDGE_BPS", 0)
     import importlib as _importlib
