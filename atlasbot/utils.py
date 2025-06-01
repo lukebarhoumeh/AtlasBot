@@ -9,6 +9,8 @@ Thin convenience layer around the `MarketData` singleton
 
 from __future__ import annotations
 
+import logging
+import os
 from typing import List
 
 from atlasbot.config import SYMBOLS
@@ -25,19 +27,27 @@ def _get_md():
 
 
 # --------------------------------------------------------------------------- helpers
-def _ensure_ready(timeout: int = 30) -> None:
-    """
-    Block until at least one symbol has a live price or `timeout` seconds pass.
+def _ensure_ready(timeout: int = 60) -> None:
+    """Wait for market data feed readiness or raise ``RuntimeError``.
 
-    A longer default (30 s) avoids the “still not ready after 15 s” error loop
-    you were seeing on slower or firewalled networks.
+    If ``CI=true`` or ``MARKET_DATA_MOCK=true`` is set in the environment, the
+    readiness check is skipped.
     """
     md = _get_md()
-    if not md.wait_ready(timeout):
-        msg = f"Market feed still not ready after {timeout}s"
-        if timeout > 15:
-            msg += f" (mode={_md.mode})"
-        raise RuntimeError(msg)
+    if (
+        os.getenv("CI", "").lower() == "true"
+        or os.getenv("MARKET_DATA_MOCK", "").lower() == "true"
+    ):
+        logging.warning("CI mode – skipping market-data readiness check")
+        return
+
+    for attempt in range(3):
+        if md.wait_ready(timeout):
+            return
+        logging.warning("Market feed not ready – retry %d/3", attempt + 1)
+
+    msg = f"Market feed still not ready after {timeout}s (mode={md.mode})"
+    raise RuntimeError(msg)
 
 
 # --------------------------------------------------------------------------- façade

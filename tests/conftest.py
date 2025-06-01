@@ -218,6 +218,17 @@ def patch_market(monkeypatch):
     yield
 
 
+@pytest.fixture(autouse=True)
+def _mock_wait_ready(monkeypatch):
+    import atlasbot.market_data as md
+
+    monkeypatch.setattr(md.MarketData, "wait_ready", lambda self, timeout=15: True)
+    monkeypatch.setattr(
+        md.MarketData, "latest_trade", lambda self, sym: 100.0, raising=False
+    )
+    yield
+
+
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
