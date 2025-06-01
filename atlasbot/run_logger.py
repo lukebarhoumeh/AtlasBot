@@ -13,6 +13,9 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 RUN_DIR = REPO_ROOT / "data" / "runs"
 RUN_DIR.mkdir(parents=True, exist_ok=True)
 RUN_CSV = RUN_DIR / f"ledger_{datetime.now(timezone.utc):%Y-%m-%d_%H-%M-%S}.csv"
+DECISIONS_CSV = (
+    REPO_ROOT / "logs" / f"decisions_{datetime.now(timezone.utc):%Y-%m-%d}.csv"
+)
 
 
 def append(row: dict) -> None:
@@ -21,4 +24,13 @@ def append(row: dict) -> None:
     RUN_CSV.parent.mkdir(parents=True, exist_ok=True)
     df = pd.DataFrame([row])
     df.to_csv(RUN_CSV, mode="a", header=header, index=False)
+    os.sync()
+
+
+def log_decision(row: dict) -> None:
+    """Append decision *row* to the daily CSV ledger."""
+    header = not DECISIONS_CSV.exists()
+    DECISIONS_CSV.parent.mkdir(parents=True, exist_ok=True)
+    df = pd.DataFrame([row])
+    df.to_csv(DECISIONS_CSV, mode="a", header=header, index=False)
     os.sync()

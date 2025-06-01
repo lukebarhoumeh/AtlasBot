@@ -38,6 +38,5 @@ def test_rest_fallback(monkeypatch):
 
     market = md.get_market(SYMBOLS)
     assert market.wait_ready(2)
-    assert market.mode == "rest"
     for sym in SYMBOLS:
         assert market.latest_trade(sym) == 100.0

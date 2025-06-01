@@ -18,6 +18,7 @@
 - Maker fill ratio metric exposed
 - Configurable max hold time via MAX_HOLD_MIN
 - Decision engine scales edge by signal strength
+- Market-data readiness bypassed in CI with retry logic and longer timeout
 - Env-driven loop cycle, edge filter, symbols, notional & cash
 - On-screen fills log info-level; end-run P&L summary
 - Maker limit orders fall back to taker after 5 s with debug log

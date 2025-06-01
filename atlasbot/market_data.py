@@ -79,7 +79,7 @@ class _WSClient:
                     self._on_fail_cb()
             logging.error("WS closed – retrying in %ds", backoff)
             time.sleep(backoff)
-            backoff = min(backoff * 2, 60)
+            backoff = min(backoff * 2, 16)
 
     # ————— internals —————
     def _on_open(self, _):
